@@ -95,6 +95,8 @@ CONFIG = {
     'tp1_allocation_pct':      0.40,     # 40% of position closes at TP1 — sizing anchors to this partial
     'green_exit_min_pct':      0.00125,  # 50% of target (0.125%) — equity % required to trigger green exit
     'max_concurrent_positions': 1,       # 1 max — concentrate capital in best setup
+    'box_timeframe':    '30m',            # 'daily' (default) or '30m' (rolling window experiment)
+    'box_30m_lookback': 8,                # 30m bars in window when box_timeframe='30m' (8 = 4 hours)
     'max_eur_positions':        2,       # EUR exposure cap — EUR trending; max 2 EUR pairs open
     'max_daily_loss_pct':       0.075,   # 7.5% daily halt — allows 5 full stops at 1.5% risk before shutdown
     'min_risk_reward':          1.60,    # Reduced to increase qualified setups while keeping RR > 1.5 floor
@@ -150,6 +152,19 @@ CONFIG = {
 
 _running = True
 _INSTANCE_LOCK_FH = None
+
+def _fetch_box_bars(oanda, symbol):
+    """Return (daily_bars, hourly_bars, bars_30m) based on box_timeframe config."""
+    use_30m  = CONFIG.get('box_timeframe') == '30m'
+    lookback = CONFIG.get('box_30m_lookback', 8)
+    hourly_bars = oanda.get_hourly_bars(symbol, count=200)
+    daily_bars  = oanda.get_daily_bars(symbol, count=20)
+    if use_30m:
+        bars_30m = oanda.get_30m_bars(symbol, count=lookback + 20)
+    else:
+        bars_30m = None
+    return daily_bars, hourly_bars, bars_30m
+
 
 def _acquire_instance_lock_or_exit():
     """Ensure only one Mr. Scrooge process can run in this working directory."""
@@ -270,8 +285,7 @@ def _update_sessions(ctx: dict, now: datetime) -> bool:
     box_machine   = ctx['box_machine']
     for symbol in new_instruments:
         if symbol not in box_machine.states:
-            daily_bars  = oanda.get_daily_bars(symbol)
-            hourly_bars = oanda.get_hourly_bars(symbol, count=200)
+            daily_bars, hourly_bars, bars_30m = _fetch_box_bars(oanda, symbol)
             if daily_bars is None or len(daily_bars) < 3:
                 continue
             prices     = oanda.get_prices([symbol])
@@ -284,7 +298,7 @@ def _update_sessions(ctx: dict, now: datetime) -> bool:
             zone_map = zone_detector.build_zone_map(
                 symbol, 'forex', daily_bars,
                 hourly_bars if hourly_bars is not None else daily_bars,
-                current_price
+                current_price, bars_30m=bars_30m
             )
             if zone_map:
                 box_machine.initialize_instrument(symbol, zone_map.daily_box, spread)
@@ -390,8 +404,7 @@ def boot():
 
     # Initialize box state machine for each instrument
     for symbol in active_instruments:
-        daily_bars  = oanda.get_daily_bars(symbol)
-        hourly_bars = oanda.get_hourly_bars(symbol, count=200)
+        daily_bars, hourly_bars, bars_30m = _fetch_box_bars(oanda, symbol)
         if daily_bars is None or len(daily_bars) < 3:
             log.warning(f'{symbol}: insufficient daily bars — skipping box init')
             continue
@@ -405,7 +418,7 @@ def boot():
         zone_map = zone_detector.build_zone_map(
             symbol, 'forex', daily_bars,
             hourly_bars if hourly_bars is not None else daily_bars,
-            current_price
+            current_price, bars_30m=bars_30m
         )
         if zone_map:
             box_machine.initialize_instrument(symbol, zone_map.daily_box, spread)
@@ -459,8 +472,7 @@ def daily_reset(ctx: dict):
     zone_detector = ctx['zone_detector']
     box_machine   = ctx['box_machine']
     for symbol in ctx['active_instruments']:
-        daily_bars  = oanda.get_daily_bars(symbol)
-        hourly_bars = oanda.get_hourly_bars(symbol, count=200)
+        daily_bars, hourly_bars, bars_30m = _fetch_box_bars(oanda, symbol)
         if daily_bars is None or len(daily_bars) < 3:
             continue
         prices     = oanda.get_prices([symbol])
@@ -473,7 +485,7 @@ def daily_reset(ctx: dict):
         zone_map = zone_detector.build_zone_map(
             symbol, 'forex', daily_bars,
             hourly_bars if hourly_bars is not None else daily_bars,
-            current_price
+            current_price, bars_30m=bars_30m
         )
         if zone_map:
             box_machine.initialize_instrument(symbol, zone_map.daily_box, spread)
@@ -509,14 +521,13 @@ def process_instrument(symbol: str, ctx: dict) -> Optional[dict]:
 
     # Fetch bars (single retry on failure)
     bars_5m = oanda.get_5m_bars(symbol, count=300)   # 25h window — ATR gate needs full session range
-    bars_1h = oanda.get_hourly_bars(symbol, count=200) # 8+ trading days — covers key weekly levels
-    bars_d  = oanda.get_daily_bars(symbol, count=20)
+    bars_d, bars_1h, bars_30m = _fetch_box_bars(oanda, symbol)
 
     if bars_5m is None or bars_1h is None or bars_d is None:
         time.sleep(2)
         if bars_5m is None: bars_5m = oanda.get_5m_bars(symbol, count=300)
-        if bars_1h is None: bars_1h = oanda.get_hourly_bars(symbol, count=200)
-        if bars_d  is None: bars_d  = oanda.get_daily_bars(symbol, count=20)
+        if bars_d is None or bars_1h is None:
+            bars_d, bars_1h, bars_30m = _fetch_box_bars(oanda, symbol)
         if bars_5m is None or bars_1h is None or bars_d is None:
             log.warning(f'{symbol}: bar fetch failed after retry — skipping')
             return None
@@ -534,10 +545,20 @@ def process_instrument(symbol: str, ctx: dict) -> Optional[dict]:
         return None
 
     # Build zone map (also gives us the daily_box for the box machine)
-    zone_map = zone_detector.build_zone_map(symbol, 'forex', bars_d, bars_1h, current_price)
+    zone_map = zone_detector.build_zone_map(symbol, 'forex', bars_d, bars_1h, current_price, bars_30m=bars_30m)
     if zone_map is None:
         log.warning(f'{symbol}: zone map failed — skipping')
         return None
+
+    # In 30m mode — refresh box state machine when the box shifts (no open trade)
+    if CONFIG.get('box_timeframe') == '30m' and symbol in box_machine.states:
+        cur = box_machine.states[symbol]
+        cur_PDH, cur_PDL = cur.active_box.PDH, cur.active_box.PDL
+        new_PDH, new_PDL = zone_map.daily_box.PDH, zone_map.daily_box.PDL
+        shift = max(abs(new_PDH - cur_PDH) / cur_PDH, abs(new_PDL - cur_PDL) / cur_PDL) if cur_PDH > 0 else 1.0
+        if shift > 0.001 and cur.state.value != 'BOX_BREACH_PENDING':
+            box_machine.initialize_instrument(symbol, zone_map.daily_box, live_spread or 0.0002)
+            log.info(f'{symbol}: 30m box refreshed (shift={shift*100:.3f}%)')
 
     half_box = zone_map.daily_box.half_box
 

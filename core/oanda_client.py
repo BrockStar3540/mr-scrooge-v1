@@ -258,6 +258,10 @@ class OANDAClient:
         """Hourly bars for magic line detection."""
         return self.get_candles(instrument, 'H1', count)
 
+    def get_30m_bars(self, instrument: str, count: int = 100) -> Optional[pd.DataFrame]:
+        """30-minute bars for experimental rolling box."""
+        return self.get_candles(instrument, 'M30', count)
+
     def get_5m_bars(self, instrument: str, count: int = 50) -> Optional[pd.DataFrame]:
         """5-minute bars for pitchfork/signal confirmation."""
         return self.get_candles(instrument, 'M5', count)

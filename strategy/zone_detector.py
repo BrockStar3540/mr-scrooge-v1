@@ -138,7 +138,8 @@ class ZoneDetector:
                        exchange: str,
                        daily_bars: pd.DataFrame,
                        hourly_bars: pd.DataFrame,
-                       current_price: float) -> Optional[ZoneMap]:
+                       current_price: float,
+                       bars_30m: pd.DataFrame = None) -> Optional[ZoneMap]:
         """
         Builds complete ZoneMap for one instrument.
 
@@ -154,8 +155,12 @@ class ZoneDetector:
             log.warning(f"Insufficient bar data for {symbol}")
             return None
 
-        # 1. Build daily box
-        daily_box = self._build_daily_box(symbol, daily_bars, hourly_bars)
+        # 1. Build box — daily (default) or rolling 30m window (experimental)
+        if bars_30m is not None and len(bars_30m) >= 10:
+            lookback = getattr(self, 'box_30m_lookback', 8)
+            daily_box = self._build_30m_box(symbol, bars_30m, lookback)
+        else:
+            daily_box = self._build_daily_box(symbol, daily_bars, hourly_bars)
         if daily_box is None:
             return None
 
@@ -205,6 +210,82 @@ class ZoneDetector:
             nearest_sell_zone=nearest_sell,
             built_at=datetime.now().isoformat()
         )
+
+    # ----------------------------------------------------------
+    # 30-MINUTE ROLLING BOX (experimental)
+    # ----------------------------------------------------------
+
+    def _build_30m_box(self,
+                        symbol: str,
+                        bars_30m: pd.DataFrame,
+                        lookback: int = 8) -> Optional['DailyBox']:
+        """
+        Builds a box from the last `lookback` completed 30-minute bars.
+        PDH = window high, PDL = window low.
+        Resets naturally every cycle as bars shift.
+        No gap protocol, no percentile filter, no weekend skip.
+        """
+        try:
+            if len(bars_30m) < lookback + 2:
+                log.warning(f"{symbol}: insufficient 30m bars ({len(bars_30m)} < {lookback+2})")
+                return None
+
+            # Exclude the current (potentially incomplete) bar
+            window = bars_30m.iloc[-(lookback + 1):-1]
+
+            PDH = float(window['high'].max())
+            PDL = float(window['low'].min())
+
+            if PDH <= PDL:
+                log.error(f"{symbol}: 30m box inverted PDH={PDH:.5f} PDL={PDL:.5f}")
+                return None
+
+            box_range   = PDH - PDL
+            half_box    = box_range / 2
+            center      = PDL + half_box
+            current_cls = float(bars_30m.iloc[-1]['close'])
+            box_range_pct = box_range / current_cls if current_cls > 0 else 0
+
+            # ATR from the window's true ranges
+            highs   = window['high'].values
+            lows    = window['low'].values
+            closes  = window['close'].values
+            trs = [max(highs[i] - lows[i],
+                       abs(highs[i]  - closes[i - 1]),
+                       abs(lows[i]   - closes[i - 1]))
+                   for i in range(1, len(highs))]
+            atr = float(np.mean(trs)) if trs else box_range
+
+            session_date = str(bars_30m.index[-2])[:16]
+
+            log.info(
+                f"{symbol}: 30m box built | lookback={lookback} bars | "
+                f"PDH={PDH:.5f} PDL={PDL:.5f} range={box_range_pct*100:.3f}%"
+            )
+
+            return DailyBox(
+                symbol=symbol,
+                PDH=PDH, PDL=PDL,
+                center=center,
+                box_range=box_range,
+                half_box=half_box,
+                box_range_pct=box_range_pct,
+                ATR=atr,
+                ATR_60pct=atr * 0.60,
+                ATR_80pct=atr * 0.80,
+                ATR_20pct=atr * 0.20,
+                session_date=session_date,
+                draw_time=bars_30m.index[-1].isoformat() if hasattr(bars_30m.index[-1], 'isoformat') else str(bars_30m.index[-1]),
+                pdh_touches=0,
+                pdl_touches=0,
+                percentile_filtered=False,
+                validated=True,
+                raw_PDH=PDH,
+                raw_PDL=PDL,
+            )
+        except Exception as e:
+            log.error(f"{symbol}: _build_30m_box failed: {e}", exc_info=True)
+            return None
 
     # ----------------------------------------------------------
     # DAILY BOX
