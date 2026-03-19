@@ -96,7 +96,7 @@ CONFIG = {
     'green_exit_min_pct':      0.00125,  # 50% of target (0.125%) — equity % required to trigger green exit
     'max_concurrent_positions': 1,       # 1 max — concentrate capital in best setup
     'box_timeframe':    '30m',            # 'daily' (default) or '30m' (rolling window experiment)
-    'box_30m_lookback': 8,                # 30m bars in window when box_timeframe='30m' (8 = 4 hours)
+    'box_30m_lookback': 24,               # 30m bars in window when box_timeframe='30m' (24 = 12 hours ≈ daily range)
     'max_eur_positions':        2,       # EUR exposure cap — EUR trending; max 2 EUR pairs open
     'max_daily_loss_pct':       0.075,   # 7.5% daily halt — allows 5 full stops at 1.5% risk before shutdown
     'min_risk_reward':          1.60,    # Reduced to increase qualified setups while keeping RR > 1.5 floor
@@ -141,7 +141,7 @@ CONFIG = {
 
     # Universe — no instrument cap; risk ceiling is max_concurrent_positions + max_trade_risk_pct
     'instrument_tiers':        ['majors'],
-    'universe_mode':           'balanced',  # balanced | standard | aggressive
+    'universe_mode':           'standard',  # balanced | standard | aggressive
     'apply_probation_size':    True,
     'probation_size_multiplier': 0.65,      # 65% size for probation pairs
 }

@@ -119,7 +119,8 @@ class ZoneDetector:
         self.buy_zone_pct = config.get('buy_zone_pct', 0.30)         # Bottom 30% of box = buy zone (MASTER_THEORY: buy near the lower line)
         self.sell_zone_pct = config.get('sell_zone_pct', 0.30)       # Top 30% of box = sell zone (MASTER_THEORY: sell near the upper line)
         self.atr_period = config.get('atr_period', 14)
-        self.hourly_bars_back = config.get('hourly_bars_back', 48)   # 2 days of hourly data
+        self.hourly_bars_back  = config.get('hourly_bars_back', 48)   # 2 days of hourly data
+        self.box_30m_lookback  = config.get('box_30m_lookback', 24)  # 30m bars in rolling window
         # Percentile filtering — removes spike wicks from PDH/PDL
         self.use_percentile_filter = config.get('use_percentile_filter', True)
         self.pdh_percentile = config.get('pdh_percentile', 98)  # MASTER_THEORY: use true prior high/low; only trim extreme single-bar spikes
