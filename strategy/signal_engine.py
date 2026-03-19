@@ -1,4 +1,10 @@
 # ============================================================
+# Copyright (c) Carl Brock 2026. All rights reserved.
+# Use, reproduction, modification, or distribution of this
+# software is permitted only with the express written
+# permission of Carl Brock.
+# ============================================================
+# ============================================================
 # BOXBOT — SIGNAL CONFIRMATION ENGINE
 # Implements Doug & Sylvia's exact confirmation rules:
 #
@@ -675,9 +681,15 @@ class SignalEngine:
                         continue
                     # MASTER_THEORY: "entry happens above the high of that candle,
                     # stop-loss placed slightly below." Use candle extreme, not box wall.
-                    trigger = h * 1.0001
-                    stop = l * (1 - self.sl_floor_pct)
-                    stop = self._apply_sl_floor(trigger, stop, direction)
+                    if zone_price is not None and l > zone_price * 1.001:
+                        continue  # candle too far above zone
+                    if box_stop is not None and zone_price is not None:
+                        trigger = zone_price * 1.0001
+                        stop = box_stop * (1 - 0.001)
+                    else:
+                        trigger = h * 1.0001
+                        stop = l * (1 - self.sl_floor_pct)
+                        stop = self._apply_sl_floor(trigger, stop, direction)
                     return PitchforkResult(
                         detected=True, signal_type='john_wick', direction='long',
                         directional_candles=0, trigger_price=trigger, stop_price=stop,
@@ -696,9 +708,15 @@ class SignalEngine:
                     if not confirmed:
                         continue
                     # MASTER_THEORY: "entry below low of candle, stop slightly above."
-                    trigger = l * 0.9999
-                    stop = h * (1 + self.sl_floor_pct)
-                    stop = self._apply_sl_floor(trigger, stop, direction)
+                    if zone_price is not None and h < zone_price * 0.999:
+                        continue  # candle too far below zone
+                    if box_stop is not None and zone_price is not None:
+                        trigger = zone_price * 0.9999
+                        stop = box_stop * (1 + 0.001)
+                    else:
+                        trigger = l * 0.9999
+                        stop = h * (1 + self.sl_floor_pct)
+                        stop = self._apply_sl_floor(trigger, stop, direction)
                     return PitchforkResult(
                         detected=True, signal_type='john_wick', direction='short',
                         directional_candles=0, trigger_price=trigger, stop_price=stop,
@@ -734,10 +752,16 @@ class SignalEngine:
             if direction == 'long':
                 if (prev_c < prev_o and curr_c > curr_o and
                         curr_l < prev_l and curr_h > prev_h):
+                    if zone_price is not None and curr_l > zone_price * 1.001:
+                        continue  # candle too far above zone
                     # MASTER_THEORY: enter above the engulfing candle, stop below it.
-                    trigger = curr_h * 1.0001
-                    stop = curr_l * (1 - self.sl_floor_pct)
-                    stop = self._apply_sl_floor(trigger, stop, direction)
+                    if box_stop is not None and zone_price is not None:
+                        trigger = zone_price * 1.0001
+                        stop = box_stop * (1 - 0.001)
+                    else:
+                        trigger = curr_h * 1.0001
+                        stop = curr_l * (1 - self.sl_floor_pct)
+                        stop = self._apply_sl_floor(trigger, stop, direction)
                     return PitchforkResult(
                         detected=True, signal_type='power_of_towers', direction='long',
                         directional_candles=0,
@@ -748,10 +772,16 @@ class SignalEngine:
             else:
                 if (prev_c > prev_o and curr_c < curr_o and
                         curr_h > prev_h and curr_l < prev_l):
+                    if zone_price is not None and curr_h < zone_price * 0.999:
+                        continue  # candle too far below zone
                     # MASTER_THEORY: enter below the engulfing candle, stop above it.
-                    trigger = curr_l * 0.9999
-                    stop = curr_h * (1 + self.sl_floor_pct)
-                    stop = self._apply_sl_floor(trigger, stop, direction)
+                    if box_stop is not None and zone_price is not None:
+                        trigger = zone_price * 0.9999
+                        stop = box_stop * (1 + 0.001)
+                    else:
+                        trigger = curr_l * 0.9999
+                        stop = curr_h * (1 + self.sl_floor_pct)
+                        stop = self._apply_sl_floor(trigger, stop, direction)
                     return PitchforkResult(
                         detected=True, signal_type='power_of_towers', direction='short',
                         directional_candles=0,
@@ -806,14 +836,30 @@ class SignalEngine:
                         break
 
             if directional_count >= self.pitchfork_directional_min:
-                # MASTER_THEORY: "entry above the high of the reversal candle, stop below it."
+                # Zone proximity: skip if reversal candle is far from the active zone
+                if zone_price is not None:
+                    if direction == 'long' and lows[reversal_candle_idx] > zone_price * 1.001:
+                        continue  # candle too far above zone
+                    if direction == 'short' and highs[reversal_candle_idx] < zone_price * 0.999:
+                        continue  # candle too far below zone
+                # Stop: use box boundary (PDH/PDL) when provided — tight stop outside the box.
+                # Trigger: anchor to zone_price when box context present — candle confirms, zone defines entry.
                 if direction == 'long':
-                    trigger = highs[reversal_candle_idx] * 1.0001
-                    stop = lows[reversal_candle_idx] * (1 - self.sl_floor_pct)
+                    if box_stop is not None and zone_price is not None:
+                        trigger = zone_price * 1.0001   # enter long at zone (PDL breakout)
+                        stop = box_stop * (1 - 0.001)   # ~10 pips below PDL
+                    else:
+                        trigger = highs[reversal_candle_idx] * 1.0001
+                        stop = lows[reversal_candle_idx] * (1 - self.sl_floor_pct)
+                        stop = self._apply_sl_floor(trigger, stop, direction)
                 else:
-                    trigger = lows[reversal_candle_idx] * 0.9999
-                    stop = highs[reversal_candle_idx] * (1 + self.sl_floor_pct)
-                stop = self._apply_sl_floor(trigger, stop, direction)
+                    if box_stop is not None and zone_price is not None:
+                        trigger = zone_price * 0.9999   # enter short at zone (PDH breakdown)
+                        stop = box_stop * (1 + 0.001)   # ~10 pips above PDH
+                    else:
+                        trigger = lows[reversal_candle_idx] * 0.9999
+                        stop = highs[reversal_candle_idx] * (1 + self.sl_floor_pct)
+                        stop = self._apply_sl_floor(trigger, stop, direction)
 
                 confidence = 'HIGH' if directional_count >= 4 else 'MODERATE'
 

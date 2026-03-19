@@ -1,3 +1,9 @@
+# ============================================================
+# Copyright (c) Carl Brock 2026. All rights reserved.
+# Use, reproduction, modification, or distribution of this
+# software is permitted only with the express written
+# permission of Carl Brock.
+# ============================================================
 #!/usr/bin/env python3
 # ============================================================
 # Copyright (c) Carl Brock 2026. All rights reserved.
@@ -97,6 +103,7 @@ CONFIG = {
     'max_concurrent_positions': 1,       # 1 max — concentrate capital in best setup
     'box_timeframe':    '30m',            # 'daily' (default) or '30m' (rolling window experiment)
     'box_30m_lookback': 24,               # 30m bars in window when box_timeframe='30m' (24 = 12 hours ≈ daily range)
+    'high_volatility_atr_mult': 99,       # disabled in 30m mode — forces 5m bar patterns (hourly candle SL too wide for 30m box)
     'max_eur_positions':        2,       # EUR exposure cap — EUR trending; max 2 EUR pairs open
     'max_daily_loss_pct':       0.075,   # 7.5% daily halt — allows 5 full stops at 1.5% risk before shutdown
     'min_risk_reward':          1.60,    # Reduced to increase qualified setups while keeping RR > 1.5 floor
@@ -815,8 +822,12 @@ def process_instrument(symbol: str, ctx: dict) -> Optional[dict]:
         return None
 
     # Base units from margin target
+    # For cross pairs (AUD/JPY, NZD/JPY, AUD/CAD, AUD/NZD), current_price is NOT in USD.
+    # Derive USD value of 1 base unit from pip_value * price / pip_size.
+    # AUD/JPY: pip_value ~ 0.01/USD_JPY/unit => base_usd ~ AUD/USD rate.
+    base_price_usd = pip_value * current_price / pip_size if pip_size > 0 else current_price
     target_margin = equity * CONFIG['margin_utilization_pct']
-    base_units    = target_margin / (current_price * margin_rate)
+    base_units    = target_margin / (base_price_usd * margin_rate)
 
     # Size multipliers
     size_mult = float(box_machine.get_position_size_multiplier(symbol))
