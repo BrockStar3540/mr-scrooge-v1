@@ -39,8 +39,7 @@ import signal
 from datetime import datetime, timezone
 from typing import Dict, List, Optional
 
-# When running from harvester/ subdirectory inside the repo, parent dir is the bot root
-SCROOGE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..')
+SCROOGE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'mr-scrooge')
 sys.path.insert(0, SCROOGE_DIR)
 
 from dotenv import load_dotenv
@@ -76,7 +75,14 @@ DEFAULT_CONFIG = {
     # Key: OANDA instrument string (e.g. "EUR_USD").
     # Value: {"pips": [10,20,30], "sl_lock_pips": [0,10,20]}
     # When set, overrides the equity-% calculation for that pair.
-    'pair_pip_overrides': {}
+    'pair_pip_overrides': {},
+
+    # Stagnant position timeout.
+    # If a trade has been open >= stagnant_timeout_hours AND is profitable
+    # by at least stagnant_min_pips, a TP is set at the current bid/ask
+    # (limit exit, maker fees) to free capital for the next opportunity.
+    'stagnant_timeout_hours': 3.0,
+    'stagnant_min_pips':      2.0,
 }
 
 
@@ -349,6 +355,40 @@ def process_trade(trade: Dict, state: Dict, oanda: OANDAClient,
 
     if state_changed:
         save_state(state)
+
+    # ── Stagnant timeout ───────────────────────────────────────
+    # If trade has been open >= timeout threshold and is in the green
+    # but has not been stagnant-closed yet, set a resting TP at
+    # current bid/ask (limit exit, maker fees) to free capital.
+    if not ts.get('stagnant_closed'):
+        timeout_hours = cfg.get('stagnant_timeout_hours', 3.0)
+        min_pips      = cfg.get('stagnant_min_pips', 2.0)
+        try:
+            first_seen_dt = datetime.fromisoformat(ts['first_seen'])
+        except Exception:
+            first_seen_dt = None
+
+        if first_seen_dt:
+            hours_open = (datetime.now(timezone.utc) - first_seen_dt).total_seconds() / 3600
+            if hours_open >= timeout_hours and profit_pips >= min_pips:
+                exit_price = px['bid'] if direction == 'long' else px['ask']
+                log.info(
+                    f'STAGNANT TIMEOUT: {client_id} | {instrument} | '
+                    f'{hours_open:.1f}h open | {profit_pips:.1f}p profit | '
+                    f'setting limit TP @ {exit_price:.5f}'
+                )
+                ok = oanda.modify_trade_tp(oanda_id, exit_price)
+                if ok:
+                    ts['stagnant_closed'] = True
+                    ts['stagnant_closed_at'] = datetime.now(timezone.utc).isoformat()
+                    harvest_log.info(
+                        f'STAGNANT CLOSE | {client_id} | {instrument} {direction} | '
+                        f'{hours_open:.1f}h open | {profit_pips:.1f}p profit | '
+                        f'limit TP set @ {exit_price:.5f}'
+                    )
+                    save_state(state)
+                else:
+                    log.warning(f'Stagnant TP set FAILED: {client_id}')
 
     return state_changed
 
