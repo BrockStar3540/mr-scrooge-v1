@@ -740,9 +740,9 @@ def process_instrument(symbol: str, ctx: dict) -> Optional[dict]:
 
     # Gate: too many concurrent positions?
     # Exception: a pending re-entry is allowed to bypass the cap (same setup, break-even stop)
-    if not pending_reentry and ctx['position_count'] >= CONFIG['max_concurrent_positions']:
+    at_max_positions = not pending_reentry and ctx['position_count'] >= CONFIG['max_concurrent_positions']
+    if at_max_positions:
         decision_log.info(f'{symbol}: Max positions ({ctx["position_count"]})')
-        return None
 
     # EUR currency cap removed — trend filter now handles directional EUR exposure correctly.
 
@@ -759,7 +759,7 @@ def process_instrument(symbol: str, ctx: dict) -> Optional[dict]:
     # Collect for dashboard status
     ctx.get('_last_signals', []).append(signal)
 
-    if not signal.all_gates_passed or signal.action not in ('ENTER_LONG', 'ENTER_SHORT'):
+    if not signal.all_gates_passed or signal.action not in ('ENTER_LONG', 'ENTER_SHORT') or at_max_positions:
         ctx.get('pending_reentry', {}).pop(symbol, None)
         return None
 
