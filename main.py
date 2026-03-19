@@ -6,12 +6,6 @@
 # ============================================================
 #!/usr/bin/env python3
 # ============================================================
-# Copyright (c) Carl Brock 2026. All rights reserved.
-# Use, reproduction, modification, or distribution of this
-# software is permitted only with the express written
-# permission of Carl Brock.
-# ============================================================
-# ============================================================
 # MR. SCROOGE — MAIN RUNTIME LOOP
 # OANDA forex box theory reversal bot.
 #
@@ -95,7 +89,7 @@ trade_log.addHandler(trade_handler)
 
 CONFIG = {
     # Risk — bigger conviction, fewer trades
-    'max_trade_risk_pct':      0.015,    # kept for daily-loss reference; sizing is now margin-based
+    'max_trade_risk_pct':      0.01,     # Risk 1% of equity per trade -- sized by sl_pips
     'margin_utilization_pct':  0.50,     # deploy 50% of equity as margin per trade
     'target_profit_pct':       0.0025,   # 0.25% of equity per trade — profit-anchored sizing target
     'tp1_allocation_pct':      0.40,     # 40% of position closes at TP1 — sizing anchors to this partial
@@ -107,6 +101,9 @@ CONFIG = {
     'max_eur_positions':        2,       # EUR exposure cap — EUR trending; max 2 EUR pairs open
     'max_daily_loss_pct':       0.075,   # 7.5% daily halt — allows 5 full stops at 1.5% risk before shutdown
     'min_risk_reward':          1.60,    # Reduced to increase qualified setups while keeping RR > 1.5 floor
+    'sl_pips':                  5,       # Fixed SL: 5 pips beyond zone entry
+    'tp1_pips':                 10,      # Fixed TP1: 10 pips from entry (quick partial)
+    'tp2_pips':                 30,      # Fixed TP2: 30 pips from entry (full exit)
 
     # Timing
     'scan_interval_seconds':    300,     # 5 minutes
@@ -821,13 +818,12 @@ def process_instrument(symbol: str, ctx: dict) -> Optional[dict]:
     if risk_points <= 0:
         return None
 
-    # Base units from margin target
-    # For cross pairs (AUD/JPY, NZD/JPY, AUD/CAD, AUD/NZD), current_price is NOT in USD.
-    # Derive USD value of 1 base unit from pip_value * price / pip_size.
-    # AUD/JPY: pip_value ~ 0.01/USD_JPY/unit => base_usd ~ AUD/USD rate.
-    base_price_usd = pip_value * current_price / pip_size if pip_size > 0 else current_price
-    target_margin = equity * CONFIG['margin_utilization_pct']
-    base_units    = target_margin / (base_price_usd * margin_rate)
+    # Risk-based sizing: units = risk_dollars / (sl_pips * pip_value_per_unit)
+    # pip_value is USD per pip per unit -- correct for all pairs including JPY crosses.
+    # A 5-pip adverse move costs exactly (5 * pip_value * units) = max_trade_risk_pct * equity.
+    _sl_pips    = CONFIG.get('sl_pips', 5)
+    target_risk = equity * CONFIG['max_trade_risk_pct']
+    base_units  = target_risk / (_sl_pips * pip_value) if pip_value > 0 else 0
 
     # Size multipliers
     size_mult = float(box_machine.get_position_size_multiplier(symbol))
@@ -848,9 +844,9 @@ def process_instrument(symbol: str, ctx: dict) -> Optional[dict]:
     tp1_pips   = abs(signal.tp1_price - current_price) / pip_size
     pip_dollar = units * pip_value  # $ per pip on full position
     decision_log.info(
-        f'{symbol}: Margin-based sizing — equity ${equity:.2f} | '
-        f'margin target ${target_margin:.2f} ({CONFIG["margin_utilization_pct"]*100:.0f}%) | '
-        f'margin_rate {margin_rate:.2%} | units {units:.0f} | '
+                f'{symbol}: Risk-based sizing -- equity ${equity:.2f} | '
+        f'risk target ${target_risk:.2f} ({CONFIG["max_trade_risk_pct"]*100:.1f}%) | '
+        f'sl_pips {_sl_pips} | pip_value ${pip_value:.6f} | units {units:.0f} | '
         f'${pip_dollar:.2f}/pip | SL {risk_pips:.1f}p | TP1 {tp1_pips:.1f}p'
     )
 

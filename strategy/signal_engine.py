@@ -161,6 +161,11 @@ class SignalEngine:
         # Minimum SL distance — prevents fakeout stops on very tight reversal candles
         self.sl_floor_pct = config.get('sl_floor_pct', 0.0030)  # 0.30% default
 
+        # Fixed pip targets (30m box approach)
+        self.sl_pips   = config.get("sl_pips",   5)    # pips beyond zone for stop
+        self.tp1_pips  = config.get("tp1_pips",  10)   # pips from entry for TP1 partial
+        self.tp2_pips  = config.get("tp2_pips",  30)   # pips from entry for TP2 full exit
+
         # Zone proximity — how close to a magic line to be "at zone"
         self.zone_proximity_pct = config.get('zone_proximity_pct', 0.001)  # 0.1% — must be tight to zone
 
@@ -267,10 +272,15 @@ class SignalEngine:
         else:
             box_stop_val = daily_box.PDH if direction == 'short' else daily_box.PDL
 
+        # Infer pip_size from price magnitude (JPY pairs > 20, others < 10)
+        _center = zone_map.daily_box.center
+        pip_size = 0.01 if _center > 20 else 0.0001
+
         pitchfork = self._check_pitchfork(
             timeframe_bars, direction, timeframe_label,
             zone_price=active_zone.price if active_zone else None,
-            box_stop=box_stop_val
+            box_stop=box_stop_val,
+            pip_size=pip_size
         )
         if not pitchfork.detected:
             rejection_reasons.append(f"No pitchfork: {pitchfork.details}")
@@ -617,7 +627,8 @@ class SignalEngine:
                           direction: str,
                           timeframe: str,
                           zone_price: float = None,
-                          box_stop: float = None) -> PitchforkResult:
+                          box_stop: float = None,
+                          pip_size: float = 0.0001) -> PitchforkResult:
         """
         Checks for Doug & Sylvia's three named confirmation signals.
         Priority: John Wick → Power of Towers → Standard Pitchfork
@@ -634,22 +645,23 @@ class SignalEngine:
                 details='Insufficient bars'
             )
 
-        wick_result = self._detect_john_wick(bars, direction, timeframe, zone_price, box_stop)
+        wick_result = self._detect_john_wick(bars, direction, timeframe, zone_price, box_stop, pip_size)
         if wick_result.detected:
             return wick_result
 
-        tower_result = self._detect_power_of_towers(bars, direction, timeframe, zone_price, box_stop)
+        tower_result = self._detect_power_of_towers(bars, direction, timeframe, zone_price, box_stop, pip_size)
         if tower_result.detected:
             return tower_result
 
-        return self._detect_standard_pitchfork(bars, direction, timeframe, zone_price, box_stop)
+        return self._detect_standard_pitchfork(bars, direction, timeframe, zone_price, box_stop, pip_size)
 
     def _detect_john_wick(self,
                            bars: pd.DataFrame,
                            direction: str,
                            timeframe: str,
                            zone_price: float = None,
-                           box_stop: float = None) -> PitchforkResult:
+                           box_stop: float = None,
+                           pip_size: float = 0.0001) -> PitchforkResult:
         """John Wick = hammer/inverted hammer with excessive wick at zone extreme."""
         for i in range(len(bars) - 4, len(bars) - 1):
             if i < 0:
@@ -685,7 +697,7 @@ class SignalEngine:
                         continue  # candle too far above zone
                     if box_stop is not None and zone_price is not None:
                         trigger = zone_price * 1.0001
-                        stop = box_stop * (1 - 0.001)
+                        stop = zone_price - self.sl_pips * pip_size      # fixed pip stop below zone
                     else:
                         trigger = h * 1.0001
                         stop = l * (1 - self.sl_floor_pct)
@@ -712,7 +724,7 @@ class SignalEngine:
                         continue  # candle too far below zone
                     if box_stop is not None and zone_price is not None:
                         trigger = zone_price * 0.9999
-                        stop = box_stop * (1 + 0.001)
+                        stop = zone_price + self.sl_pips * pip_size      # fixed pip stop above zone
                     else:
                         trigger = l * 0.9999
                         stop = h * (1 + self.sl_floor_pct)
@@ -736,7 +748,8 @@ class SignalEngine:
                                   direction: str,
                                   timeframe: str,
                                   zone_price: float = None,
-                                  box_stop: float = None) -> PitchforkResult:
+                                  box_stop: float = None,
+                                  pip_size: float = 0.0001) -> PitchforkResult:
         """Power of Towers = full engulfing candle (including wicks)."""
         for i in range(1, len(bars) - 1):
             prev_h = float(bars['high'].iloc[i-1])
@@ -757,7 +770,7 @@ class SignalEngine:
                     # MASTER_THEORY: enter above the engulfing candle, stop below it.
                     if box_stop is not None and zone_price is not None:
                         trigger = zone_price * 1.0001
-                        stop = box_stop * (1 - 0.001)
+                        stop = zone_price - self.sl_pips * pip_size      # fixed pip stop below zone
                     else:
                         trigger = curr_h * 1.0001
                         stop = curr_l * (1 - self.sl_floor_pct)
@@ -777,7 +790,7 @@ class SignalEngine:
                     # MASTER_THEORY: enter below the engulfing candle, stop above it.
                     if box_stop is not None and zone_price is not None:
                         trigger = zone_price * 0.9999
-                        stop = box_stop * (1 + 0.001)
+                        stop = zone_price + self.sl_pips * pip_size      # fixed pip stop above zone
                     else:
                         trigger = curr_l * 0.9999
                         stop = curr_h * (1 + self.sl_floor_pct)
@@ -802,7 +815,8 @@ class SignalEngine:
                                      direction: str,
                                      timeframe: str,
                                      zone_price: float = None,
-                                     box_stop: float = None) -> PitchforkResult:
+                                     box_stop: float = None,
+                                     pip_size: float = 0.0001) -> PitchforkResult:
         """Standard pitchfork: 3-5 directional candles → first reversal candle."""
         closes = bars['close'].values
         opens = bars['open'].values
@@ -847,7 +861,7 @@ class SignalEngine:
                 if direction == 'long':
                     if box_stop is not None and zone_price is not None:
                         trigger = zone_price * 1.0001   # enter long at zone (PDL breakout)
-                        stop = box_stop * (1 - 0.001)   # ~10 pips below PDL
+                        stop = zone_price - self.sl_pips * pip_size      # fixed pip stop below zone
                     else:
                         trigger = highs[reversal_candle_idx] * 1.0001
                         stop = lows[reversal_candle_idx] * (1 - self.sl_floor_pct)
@@ -855,7 +869,7 @@ class SignalEngine:
                 else:
                     if box_stop is not None and zone_price is not None:
                         trigger = zone_price * 0.9999   # enter short at zone (PDH breakdown)
-                        stop = box_stop * (1 + 0.001)   # ~10 pips above PDH
+                        stop = zone_price + self.sl_pips * pip_size      # fixed pip stop above zone
                     else:
                         trigger = lows[reversal_candle_idx] * 0.9999
                         stop = highs[reversal_candle_idx] * (1 + self.sl_floor_pct)
@@ -911,23 +925,18 @@ class SignalEngine:
                              zone_map: ZoneMap) -> Tuple[float, float]:
         daily_box = zone_map.daily_box
 
-        # TP1 = daily box midline, TP2 = opposite daily box wall
-        # Guard: if entry is near center, TP1 ≈ entry → DOA trade.
-        # In that case, push TP1 to midpoint between entry and opposite wall.
+        # Fixed pip targets:
+        #   TP1 = 10 pips -- quick partial (2:1 vs 5-pip SL)
+        #   TP2 = 30 pips -- full exit (6:1 vs SL); SL ratchets to breakeven after TP1 hit
+        _center  = daily_box.center
+        pip_size = 0.01 if _center > 20 else 0.0001
+
         if direction == 'long':
-            tp1 = daily_box.center
-            tp2 = daily_box.PDH
-            # Ensure TP1 is at least 50% of the way from entry to TP2
-            min_tp1 = entry_price + (tp2 - entry_price) * 0.50
-            if tp1 < min_tp1:
-                tp1 = min_tp1
+            tp1 = entry_price + self.tp1_pips * pip_size
+            tp2 = entry_price + self.tp2_pips * pip_size
         else:
-            tp1 = daily_box.center
-            tp2 = daily_box.PDL
-            # Ensure TP1 is at least 50% of the way from entry to TP2
-            max_tp1 = entry_price - (entry_price - tp2) * 0.50
-            if tp1 > max_tp1:
-                tp1 = max_tp1
+            tp1 = entry_price - self.tp1_pips * pip_size
+            tp2 = entry_price - self.tp2_pips * pip_size
 
         return tp1, tp2
 
