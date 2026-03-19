@@ -1,0 +1,982 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Scrooge Dashboard</title>
+<style>
+:root {
+  --bg: #0d1117; --surface: #161b22; --border: #30363d;
+  --text: #e6edf3; --dim: #8b949e; --accent: #58a6ff;
+  --green: #3fb950; --red: #f85149; --orange: #d29922;
+  --cyan: #39d2c0; --gold: #e3b341;
+}
+* { margin:0; padding:0; box-sizing:border-box; }
+body { font-family: -apple-system, 'SF Mono', monospace; background:var(--bg); color:var(--text); font-size:13px; }
+.container { max-width:1400px; margin:0 auto; padding:16px; }
+
+/* Header */
+header { display:flex; justify-content:space-between; align-items:center; padding:12px 0; border-bottom:1px solid var(--border); margin-bottom:16px; flex-wrap:wrap; gap:12px; }
+header h1 { font-size:18px; font-weight:600; }
+header h1 span { color:var(--gold); }
+.refresh-info { color:var(--dim); font-size:11px; }
+.refresh-info .dot { display:inline-block; width:8px; height:8px; border-radius:50%; background:var(--green); margin-right:4px; animation: pulse 2s infinite; }
+@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
+
+/* Session indicators */
+.sessions { display:flex; gap:10px; align-items:center; }
+.session-badge { display:inline-flex; align-items:center; gap:4px; padding:3px 10px; border-radius:12px; font-size:11px; font-weight:600; background:rgba(139,148,158,0.1); color:var(--dim); }
+.session-badge.active { background:rgba(63,185,80,0.15); color:var(--green); }
+.session-dot { width:6px; height:6px; border-radius:50%; background:var(--dim); }
+.session-badge.active .session-dot { background:var(--green); }
+
+/* Status bar */
+.status-bar { display:grid; grid-template-columns: repeat(auto-fit, minmax(140px,1fr)); gap:12px; margin-bottom:20px; }
+.stat { background:var(--surface); border:1px solid var(--border); border-radius:8px; padding:12px 16px; }
+.stat .label { color:var(--dim); font-size:11px; text-transform:uppercase; letter-spacing:0.5px; }
+.stat .value { font-size:22px; font-weight:700; margin-top:4px; }
+.stat .value.green { color:var(--green); }
+.stat .value.red { color:var(--red); }
+
+/* Weekend banner */
+.weekend-banner { background:#2d1b00; border:1px solid var(--orange); border-radius:8px; padding:12px 16px; margin-bottom:16px; display:none; text-align:center; color:var(--orange); font-weight:700; }
+
+/* Tabs */
+.tabs { display:flex; gap:0; border-bottom:1px solid var(--border); margin-bottom:16px; overflow-x:auto; }
+.tab { padding:8px 20px; cursor:pointer; color:var(--dim); border-bottom:2px solid transparent; transition: all 0.2s; white-space:nowrap; }
+.tab:hover { color:var(--text); }
+.tab.active { color:var(--accent); border-bottom-color:var(--accent); }
+.tab-content { display:none; }
+.tab-content.active { display:block; }
+
+/* Tables */
+table { width:100%; border-collapse:collapse; }
+th { text-align:left; padding:8px 12px; color:var(--dim); font-size:11px; text-transform:uppercase; letter-spacing:0.5px; border-bottom:1px solid var(--border); }
+td { padding:8px 12px; border-bottom:1px solid var(--border); }
+tr:hover { background:rgba(88,166,255,0.04); }
+
+.badge { display:inline-block; padding:2px 8px; border-radius:12px; font-size:11px; font-weight:600; }
+.badge.pass { background:rgba(63,185,80,0.15); color:var(--green); }
+.badge.fail { background:rgba(248,81,73,0.15); color:var(--red); }
+.badge.wait { background:rgba(210,153,34,0.15); color:var(--orange); }
+.badge.off  { background:rgba(139,148,158,0.15); color:var(--dim); }
+.badge.long { background:rgba(63,185,80,0.15); color:var(--green); }
+.badge.short { background:rgba(248,81,73,0.15); color:var(--red); }
+
+/* Box state badges */
+.badge.ranging { background:rgba(63,185,80,0.15); color:var(--green); }
+.badge.breach { background:rgba(210,153,34,0.15); color:var(--orange); }
+.badge.broken { background:rgba(248,81,73,0.15); color:var(--red); }
+.badge.newbox { background:rgba(57,210,192,0.15); color:var(--cyan); }
+.badge.shelved { background:rgba(139,148,158,0.15); color:var(--dim); }
+
+.gate-chip { display:inline-block; padding:1px 6px; border-radius:4px; font-size:10px; margin:1px; }
+.gate-chip.p { background:rgba(63,185,80,0.2); color:var(--green); }
+.gate-chip.f { background:rgba(248,81,73,0.2); color:var(--red); }
+
+/* Tier badges */
+.tier { display:inline-block; padding:1px 6px; border-radius:4px; font-size:10px; font-weight:700; }
+.tier.t1 { background:rgba(63,185,80,0.25); color:var(--green); }
+.tier.t2 { background:rgba(57,210,192,0.25); color:var(--cyan); }
+.tier.t3 { background:rgba(210,153,34,0.25); color:var(--orange); }
+.tier.t4 { background:rgba(139,148,158,0.25); color:var(--dim); }
+
+/* Toggle switch */
+.toggle { position:relative; width:36px; height:20px; flex-shrink:0; }
+.toggle input { display:none; }
+.toggle .slider { position:absolute; inset:0; background:var(--border); border-radius:10px; cursor:pointer; transition:0.2s; }
+.toggle .slider::before { content:''; position:absolute; width:16px; height:16px; left:2px; top:2px; background:var(--dim); border-radius:50%; transition:0.2s; }
+.toggle input:checked + .slider { background:var(--accent); }
+.toggle input:checked + .slider::before { transform:translateX(16px); background:#fff; }
+
+/* Buttons */
+.btn { padding:8px 20px; border:none; border-radius:6px; font-size:13px; font-weight:600; cursor:pointer; transition:0.2s; }
+.btn-primary { background:var(--accent); color:#fff; }
+.btn-primary:hover { background:#79c0ff; }
+.btn-danger { background:var(--red); color:#fff; }
+.btn-danger:hover { background:#ff6e6e; }
+.btn-group { display:flex; gap:8px; margin-top:16px; }
+.toast { position:fixed; top:20px; right:20px; padding:12px 20px; border-radius:8px; background:var(--green); color:#fff; font-weight:600; z-index:100; display:none; }
+
+/* Config section */
+.config-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(320px,1fr)); gap:12px; }
+.config-section { background:var(--surface); border:1px solid var(--border); border-radius:8px; padding:16px; }
+.config-section h3 { font-size:13px; color:var(--accent); margin-bottom:10px; text-transform:uppercase; letter-spacing:0.5px; }
+.config-row { display:flex; justify-content:space-between; align-items:center; padding:4px 0; border-bottom:1px solid rgba(48,54,61,0.5); font-size:12px; }
+.config-row:last-child { border:none; }
+.config-key { color:var(--dim); }
+.config-val { color:var(--text); font-weight:600; }
+
+/* Signal cards */
+.signal-cards { display:grid; grid-template-columns:repeat(auto-fill, minmax(340px,1fr)); gap:12px; }
+.signal-card { background:var(--surface); border:1px solid var(--border); border-radius:8px; padding:14px; }
+.signal-card-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; }
+.signal-card-header h3 { font-size:14px; }
+.gate-row { display:flex; justify-content:space-between; align-items:center; padding:4px 0; font-size:12px; }
+.gate-name { color:var(--dim); }
+.gate-detail { font-size:11px; color:var(--dim); margin-left:8px; }
+.rejection { font-size:11px; color:var(--red); margin-top:6px; padding:6px 8px; background:rgba(248,81,73,0.08); border-radius:4px; }
+.entry-levels { font-size:11px; color:var(--dim); margin-top:8px; padding-top:8px; border-top:1px solid var(--border); }
+
+/* Box state cards */
+.box-cards { display:grid; grid-template-columns:repeat(auto-fill, minmax(320px,1fr)); gap:12px; }
+.box-card { background:var(--surface); border:1px solid var(--border); border-radius:8px; padding:14px; }
+.box-card-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; }
+.box-card-header h3 { font-size:14px; }
+.box-row { display:flex; justify-content:space-between; padding:3px 0; font-size:12px; }
+.box-key { color:var(--dim); }
+.box-val { color:var(--text); }
+.box-section { border-top:1px solid var(--border); margin-top:8px; padding-top:8px; }
+.box-section-title { font-size:10px; text-transform:uppercase; letter-spacing:0.5px; color:var(--accent); margin-bottom:4px; font-weight:600; }
+
+/* Log viewer */
+#log-output { background:var(--surface); border:1px solid var(--border); border-radius:8px; padding:12px; font-family:'SF Mono',monospace; font-size:11px; line-height:1.6; max-height:500px; overflow-y:auto; white-space:pre-wrap; word-break:break-all; color:var(--dim); }
+#log-output .scan { color:var(--cyan); }
+#log-output .signal { color:var(--orange); }
+#log-output .entry { color:var(--green); }
+#log-output .exit { color:var(--red); }
+#log-output .pending { color:var(--accent); }
+#log-output .error { color:var(--red); font-weight:bold; }
+
+/* Log filters */
+.log-filters { display:flex; gap:6px; margin-bottom:12px; flex-wrap:wrap; }
+.log-filter { padding:4px 12px; border:1px solid var(--border); border-radius:12px; font-size:11px; cursor:pointer; color:var(--dim); background:transparent; }
+.log-filter.active { border-color:var(--accent); color:var(--accent); background:rgba(88,166,255,0.08); }
+
+/* Scanner table */
+.scanner-summary { display:flex; gap:16px; margin-bottom:12px; font-size:12px; color:var(--dim); }
+.scanner-summary strong { color:var(--text); }
+tr.viable-row { }
+tr.rejected-row td { color:var(--dim); }
+.reason-text { font-size:11px; max-width:200px; }
+
+/* Progress bar */
+.bar-track { width:80px; height:6px; background:var(--border); border-radius:3px; display:inline-block; vertical-align:middle; }
+.bar-fill { height:100%; border-radius:3px; }
+
+/* Touch indicator */
+.touch-count { display:inline-flex; align-items:center; gap:2px; }
+.touch-dot { width:5px; height:5px; border-radius:50%; }
+.touch-dot.ok { background:var(--green); }
+.touch-dot.low { background:var(--red); }
+</style>
+</head>
+<body>
+<div class="container">
+
+<header>
+  <div style="display:flex;align-items:center;gap:16px">
+    <h1><span>SCROOGE</span> Dashboard</h1>
+    <div id="master-toggle" style="display:flex;align-items:center;gap:8px;cursor:pointer" onclick="toggleTrading()">
+      <label class="toggle" style="pointer-events:none">
+        <input type="checkbox" id="master-check" checked>
+        <span class="slider"></span>
+      </label>
+      <span id="master-label" style="font-size:12px;font-weight:700;color:var(--green)">LIVE</span>
+    </div>
+  </div>
+  <div style="display:flex;align-items:center;gap:16px">
+    <div class="sessions" id="session-indicators">
+      <span class="session-badge" id="sess-london"><span class="session-dot"></span> London</span>
+      <span class="session-badge" id="sess-new_york"><span class="session-dot"></span> New York</span>
+      <span class="session-badge" id="sess-tokyo"><span class="session-dot"></span> Tokyo</span>
+      <span class="session-badge" id="sess-sydney"><span class="session-dot"></span> Sydney</span>
+    </div>
+    <div class="refresh-info"><span class="dot"></span>Auto-refresh <span id="countdown">5</span>s</div>
+  </div>
+</header>
+
+<!-- Weekend Banner -->
+<div class="weekend-banner" id="weekend-banner">MARKETS CLOSED &mdash; Weekend Mode</div>
+
+<!-- Status Bar -->
+<div class="status-bar">
+  <div class="stat"><div class="label">Equity</div><div class="value" id="s-equity">--</div></div>
+  <div class="stat"><div class="label">Daily PnL</div><div class="value" id="s-pnl">--</div></div>
+  <div class="stat"><div class="label">Daily Loss</div><div class="value" id="s-loss">--</div></div>
+  <div class="stat"><div class="label">Positions</div><div class="value" id="s-positions">--</div></div>
+  <div class="stat"><div class="label">Scanned</div><div class="value" id="s-scanned">--</div></div>
+  <div class="stat"><div class="label">Viable</div><div class="value" id="s-viable">--</div></div>
+  <div class="stat"><div class="label">Cycle</div><div class="value" id="s-cycle">--</div></div>
+  <div class="stat"><div class="label">Last Update</div><div class="value" id="s-time" style="font-size:13px">--</div></div>
+</div>
+
+<!-- Tabs -->
+<div class="tabs">
+  <div class="tab active" data-tab="positions">Positions</div>
+  <div class="tab" data-tab="scanner">Scanner</div>
+  <div class="tab" data-tab="signals">Signals</div>
+  <div class="tab" data-tab="boxes">Box States</div>
+  <div class="tab" data-tab="config">Config</div>
+  <div class="tab" data-tab="harvester">Harvester</div>
+  <div class="tab" data-tab="logs">Logs</div>
+</div>
+
+<!-- Positions Tab -->
+<div class="tab-content active" id="tab-positions">
+  <table>
+    <thead><tr>
+      <th>Symbol</th><th>Dir</th><th>Entry</th><th>Stop</th><th>TP1</th><th>TP2</th>
+      <th>Qty</th><th>Signal</th><th>Zone</th><th>BE</th><th>P1</th><th>P2</th><th>OANDA</th><th>Status</th>
+    </tr></thead>
+    <tbody id="pos-table"></tbody>
+  </table>
+  <div id="pos-empty" style="color:var(--dim);padding:20px;text-align:center;display:none">No open positions</div>
+</div>
+
+<!-- Scanner Tab -->
+<div class="tab-content" id="tab-scanner">
+  <div class="scanner-summary" id="scanner-summary"></div>
+  <table>
+    <thead><tr>
+      <th>Pair</th><th>Status</th><th>Box (pips)</th><th>Half Box</th>
+      <th>ATR</th><th>Spread</th><th>OTR</th><th>Ticks</th><th>Rejection Reason</th>
+    </tr></thead>
+    <tbody id="scanner-table"></tbody>
+  </table>
+  <div id="scan-empty" style="color:var(--dim);padding:20px;text-align:center;display:none">No scan data — waiting for first cycle</div>
+</div>
+
+<!-- Signals Tab -->
+<div class="tab-content" id="tab-signals">
+  <div class="signal-cards" id="signal-cards"></div>
+  <div id="sig-empty" style="color:var(--dim);padding:20px;text-align:center;display:none">No signal data this cycle</div>
+</div>
+
+<!-- Box States Tab -->
+<div class="tab-content" id="tab-boxes">
+  <div class="box-cards" id="box-cards"></div>
+  <div id="box-empty" style="color:var(--dim);padding:20px;text-align:center;display:none">No box state data</div>
+</div>
+
+<!-- Config Tab -->
+<div class="tab-content" id="tab-config">
+  <div class="config-grid" id="config-grid"></div>
+  <div class="btn-group">
+    <button class="btn btn-danger" onclick="restartBot()">Restart Bot</button>
+  </div>
+</div>
+
+<!-- Logs Tab -->
+<!-- Harvester Tab -->
+<div class="tab-content" id="tab-harvester">
+  <div class="config-section" style="margin-bottom:16px">
+    <h3>Default Tiers — % of Equity</h3>
+    <p style="font-size:11px;color:var(--dim);margin-bottom:12px">
+      Pip thresholds are calculated dynamically: <code>threshold = (equity × %) / pip_dollar_value</code>.
+      This keeps dollar profit per tier consistent across all pairs and scales automatically as the account grows.
+      Set a manual override below to pin specific pip values for a pair.
+    </p>
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:12px">
+      <div>
+        <div style="font-size:11px;color:var(--dim);margin-bottom:4px">T1 — equity %</div>
+        <input id="h-t1-pct" type="number" step="0.001" min="0" style="width:100%;background:var(--bg);border:1px solid var(--border);color:var(--text);padding:4px 8px;border-radius:4px;font-size:12px">
+      </div>
+      <div>
+        <div style="font-size:11px;color:var(--dim);margin-bottom:4px">T2 — equity %</div>
+        <input id="h-t2-pct" type="number" step="0.001" min="0" style="width:100%;background:var(--bg);border:1px solid var(--border);color:var(--text);padding:4px 8px;border-radius:4px;font-size:12px">
+      </div>
+      <div>
+        <div style="font-size:11px;color:var(--dim);margin-bottom:4px">T3 — equity %</div>
+        <input id="h-t3-pct" type="number" step="0.001" min="0" style="width:100%;background:var(--bg);border:1px solid var(--border);color:var(--text);padding:4px 8px;border-radius:4px;font-size:12px">
+      </div>
+    </div>
+  </div>
+
+  <div class="config-section">
+    <h3>Per-Pair Pip Overrides</h3>
+    <p style="font-size:11px;color:var(--dim);margin-bottom:12px">
+      Leave blank to use dynamic calculation. Set pip values to pin exact thresholds for a pair.
+      Use OANDA instrument format: <code>EUR_USD</code>, <code>USD_JPY</code>, etc.
+    </p>
+    <table style="font-size:12px;margin-bottom:12px">
+      <thead>
+        <tr>
+          <th style="text-align:left;padding:6px 8px;color:var(--dim)">Pair</th>
+          <th style="padding:6px 8px;color:var(--dim)">T1 pips</th>
+          <th style="padding:6px 8px;color:var(--dim)">T2 pips</th>
+          <th style="padding:6px 8px;color:var(--dim)">T3 pips</th>
+          <th style="padding:6px 8px;color:var(--dim)">SL after T1</th>
+          <th style="padding:6px 8px;color:var(--dim)">SL after T2</th>
+          <th style="padding:6px 8px;color:var(--dim)">SL after T3</th>
+          <th style="padding:6px 8px"></th>
+        </tr>
+      </thead>
+      <tbody id="harvester-overrides-table"></tbody>
+    </table>
+    <button class="btn btn-primary" onclick="addHarvesterRow()" style="font-size:11px;padding:4px 12px">+ Add Pair</button>
+  </div>
+
+  <div style="margin-top:16px;display:flex;gap:8px;align-items:center">
+    <button class="btn btn-primary" onclick="saveHarvesterConfig()">Save</button>
+    <span id="harvester-save-msg" style="font-size:11px;color:var(--dim)"></span>
+  </div>
+</div>
+
+<div class="tab-content" id="tab-logs">
+  <div class="log-filters">
+    <button class="log-filter active" data-filter="all" onclick="setLogFilter(this)">All</button>
+    <button class="log-filter" data-filter="ENTRY" onclick="setLogFilter(this)">Entries</button>
+    <button class="log-filter" data-filter="EXIT" onclick="setLogFilter(this)">Exits</button>
+    <button class="log-filter" data-filter="NO_TRADE" onclick="setLogFilter(this)">Signals</button>
+    <button class="log-filter" data-filter="Universe scan" onclick="setLogFilter(this)">Scans</button>
+    <button class="log-filter" data-filter="BREACH PENDING" onclick="setLogFilter(this)">Pending</button>
+    <button class="log-filter" data-filter="ERROR" onclick="setLogFilter(this)">Errors</button>
+    <button class="btn btn-primary" onclick="fetchLogs()" style="margin-left:auto;padding:4px 12px;font-size:11px">Refresh</button>
+  </div>
+  <div id="log-output">Loading...</div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<footer style="text-align:center;padding:24px 0 12px;color:var(--dim);font-size:11px;border-top:1px solid var(--border);margin-top:24px">
+  &copy; Carl Brock 2026. All rights reserved.
+</footer>
+
+</div>
+
+<script>
+const API = '';
+let statusData = {};
+let configData = {};
+let countdown = 5;
+let logFilter = 'all';
+let allLogLines = [];
+
+// ── Tabs ─────────────────────────────────────────────
+document.querySelectorAll('.tab').forEach(tab => {
+  tab.addEventListener('click', () => {
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+    tab.classList.add('active');
+    document.getElementById('tab-' + tab.dataset.tab).classList.add('active');
+    if (tab.dataset.tab === 'logs') fetchLogs();
+    if (tab.dataset.tab === 'config') renderConfig();
+    if (tab.dataset.tab === 'harvester') fetchHarvesterConfig();
+  });
+});
+
+// ── Status Fetch ─────────────────────────────────────
+async function fetchStatus() {
+  try {
+    const r = await fetch(API + '/api/status');
+    statusData = await r.json();
+    renderStatus();
+    renderPositions();
+    renderScanner();
+    renderSignals();
+    renderBoxes();
+  } catch(e) { console.error('Status fetch failed', e); }
+}
+
+function renderStatus() {
+  const d = statusData;
+
+  // Equity
+  el('s-equity').textContent = '$' + (d.equity || 0).toFixed(2);
+
+  // Daily PnL
+  const pnl = d.daily_pnl || 0;
+  const pnlEl = el('s-pnl');
+  pnlEl.textContent = (pnl >= 0 ? '+' : '') + '$' + pnl.toFixed(2);
+  pnlEl.className = 'value ' + (pnl >= 0 ? 'green' : 'red');
+
+  // Daily loss %
+  const loss = (d.daily_loss_pct || 0) * 100;
+  const lossEl = el('s-loss');
+  lossEl.textContent = loss.toFixed(2) + '%';
+  lossEl.className = 'value ' + (loss > 3 ? 'red' : loss > 1 ? 'orange' : '');
+
+  // Positions
+  el('s-positions').textContent = d.positions_open || 0;
+
+  // Scanner stats
+  const screen = d.screen_results || [];
+  const viableCount = screen.filter(s => s.viable).length;
+  el('s-scanned').textContent = screen.length;
+  el('s-viable').textContent = viableCount;
+
+  // Cycle
+  el('s-cycle').textContent = d.cycle || 0;
+
+  // Timestamp
+  if (d.timestamp) {
+    const t = new Date(d.timestamp);
+    el('s-time').textContent = t.toLocaleTimeString();
+  }
+
+  // Weekend banner
+  el('weekend-banner').style.display = d.weekend ? 'block' : 'none';
+
+  // Session indicators
+  const sessions = (d.active_sessions || []).map(s => s.toLowerCase());
+  ['london', 'new_york', 'tokyo', 'sydney'].forEach(s => {
+    const badge = el('sess-' + s);
+    if (badge) {
+      if (sessions.includes(s)) badge.classList.add('active');
+      else badge.classList.remove('active');
+    }
+  });
+
+  // Master toggle
+  const enabled = d.trading_enabled !== false;
+  el('master-check').checked = enabled;
+  el('master-label').textContent = enabled ? 'LIVE' : 'PAUSED';
+  el('master-label').style.color = enabled ? 'var(--green)' : 'var(--red)';
+}
+
+// ── Positions ────────────────────────────────────────
+function renderPositions() {
+  const positions = statusData.positions || [];
+  if (positions.length === 0) {
+    el('pos-table').innerHTML = '';
+    el('pos-empty').style.display = 'block';
+    return;
+  }
+  el('pos-empty').style.display = 'none';
+
+  const rows = positions.map(p => {
+    const dirCls = p.direction === 'long' ? 'long' : 'short';
+    const dirLabel = p.direction.toUpperCase();
+    const be = p.break_even_achieved ? '<span style="color:var(--green)">&#10003;</span>' : '<span style="color:var(--dim)">&mdash;</span>';
+    const p1 = p.partial_1_taken ? '<span style="color:var(--green)">&#10003;</span>' : '<span style="color:var(--dim)">&mdash;</span>';
+    const p2 = p.partial_2_taken ? '<span style="color:var(--green)">&#10003;</span>' : '<span style="color:var(--dim)">&mdash;</span>';
+    const statusCls = p.status === 'open' ? 'pass' : p.status === 'partial' ? 'wait' : 'fail';
+    const dp = getDecimalPlaces(p.symbol);
+
+    return `<tr>
+      <td><strong>${fmtSymbol(p.symbol)}</strong></td>
+      <td><span class="badge ${dirCls}">${dirLabel}</span></td>
+      <td>${p.entry_price.toFixed(dp)}</td>
+      <td>${p.current_stop.toFixed(dp)}</td>
+      <td>${p.tp1 ? p.tp1.toFixed(dp) : '--'}</td>
+      <td>${p.tp2 ? p.tp2.toFixed(dp) : '--'}</td>
+      <td title="Original: ${p.original_quantity}">${p.remaining_quantity.toLocaleString()}</td>
+      <td style="font-size:11px">${p.signal_type || '--'}</td>
+      <td><span class="tier t${p.zone_tier || 4}">T${p.zone_tier || '?'}</span></td>
+      <td>${be}</td>
+      <td>${p1}</td>
+      <td>${p2}</td>
+      <td style="font-size:11px;color:var(--dim)">${p.oanda_trade_id || '--'}</td>
+      <td><span class="badge ${statusCls}">${p.status}</span></td>
+    </tr>`;
+  }).join('');
+  el('pos-table').innerHTML = rows;
+}
+
+// ── Scanner ──────────────────────────────────────────
+function renderScanner() {
+  const screen = statusData.screen_results || [];
+  if (screen.length === 0) {
+    el('scanner-table').innerHTML = '';
+    el('scan-empty').style.display = 'block';
+    el('scanner-summary').innerHTML = '';
+    return;
+  }
+  el('scan-empty').style.display = 'none';
+
+  const viable = screen.filter(s => s.viable);
+  const rejected = screen.filter(s => !s.viable);
+
+  el('scanner-summary').innerHTML = `
+    <span><strong>${screen.length}</strong> pairs scanned</span>
+    <span style="color:var(--green)"><strong>${viable.length}</strong> viable</span>
+    <span style="color:var(--red)"><strong>${rejected.length}</strong> rejected</span>
+  `;
+
+  // Sort: viable first, then by OTR ascending
+  const sorted = [...screen].sort((a, b) => {
+    if (a.viable !== b.viable) return a.viable ? -1 : 1;
+    return a.otr_ratio - b.otr_ratio;
+  });
+
+  const rows = sorted.map(s => {
+    const rowCls = s.viable ? 'viable-row' : 'rejected-row';
+    const statusBadge = s.viable
+      ? '<span class="badge pass">VIABLE</span>'
+      : '<span class="badge fail">SKIP</span>';
+
+    const otrPct = (s.otr_ratio * 100).toFixed(0);
+    const otrColor = s.otr_ratio < 0.15 ? 'var(--green)' : s.otr_ratio < 0.25 ? 'var(--cyan)' : s.otr_ratio < 0.40 ? 'var(--orange)' : 'var(--red)';
+
+    return `<tr class="${rowCls}">
+      <td><strong>${fmtSymbol(s.instrument)}</strong></td>
+      <td>${statusBadge}</td>
+      <td>${s.box_range_pips.toFixed(1)}</td>
+      <td>${s.half_box_pips.toFixed(1)}</td>
+      <td>${s.daily_atr_pips.toFixed(1)}</td>
+      <td>${s.spread_pips.toFixed(1)}</td>
+      <td style="color:${otrColor};font-weight:600">${otrPct}%</td>
+      <td>${s.prior_day_ticks.toLocaleString()}</td>
+      <td class="reason-text">${s.rejection_reason || '--'}</td>
+    </tr>`;
+  }).join('');
+
+  el('scanner-table').innerHTML = rows;
+}
+
+// ── Signals ──────────────────────────────────────────
+function renderSignals() {
+  const signals = statusData.signals || [];
+  if (signals.length === 0) {
+    el('signal-cards').innerHTML = '';
+    el('sig-empty').style.display = 'block';
+    return;
+  }
+  el('sig-empty').style.display = 'none';
+
+  const cards = signals.map(s => {
+    const g = s.gates || {};
+    const actionCls = s.action.includes('ENTER') ? 'pass' : s.action === 'WAIT' ? 'wait' : 'fail';
+    const dp = getDecimalPlaces(s.symbol);
+
+    // Gate rows
+    const gateRows = [
+      gateRow('Zone', g.zone, g.zone ? `T${g.zone.tier} ${g.zone.details ? '— ' + truncate(g.zone.details, 40) : ''}` : ''),
+      gateRow('ATR', g.atr, g.atr ? `${(g.atr.consumed_pct * 100).toFixed(0)}% consumed — ${g.atr.strength}` : ''),
+      gateRow('Sucker Move', g.sucker_move, ''),
+      gateRow('Pitchfork', g.pitchfork, g.pitchfork && g.pitchfork.type ? `${g.pitchfork.type} (${g.pitchfork.confidence})` : ''),
+      gateRow('OTR', g.otr, g.otr ? `${(g.otr.ratio * 100).toFixed(1)}% — ${g.otr.category}` : ''),
+    ].join('');
+
+    // Rejection reasons
+    const rejections = (s.rejection_reasons || []).length > 0
+      ? `<div class="rejection">${s.rejection_reasons.join('<br>')}</div>`
+      : '';
+
+    // Entry levels
+    let levels = '';
+    if (s.all_gates_passed && s.entry_price) {
+      levels = `<div class="entry-levels">
+        Entry: ${s.entry_price.toFixed(dp)} | Stop: ${s.stop_price ? s.stop_price.toFixed(dp) : '--'} |
+        TP1: ${s.tp1_price ? s.tp1_price.toFixed(dp) : '--'} | TP2: ${s.tp2_price ? s.tp2_price.toFixed(dp) : '--'} |
+        R:R <strong>${s.risk_reward || '--'}</strong>
+      </div>`;
+    } else if (s.risk_reward) {
+      levels = `<div class="entry-levels">R:R <strong>${s.risk_reward}</strong></div>`;
+    }
+
+    // Gates summary chips at top
+    const gateChips = [
+      chipFor('Z', g.zone),
+      chipFor('ATR', g.atr),
+      chipFor('SM', g.sucker_move),
+      chipFor('PF', g.pitchfork),
+      chipFor('OTR', g.otr),
+    ].join(' ');
+
+    return `<div class="signal-card">
+      <div class="signal-card-header">
+        <h3>${fmtSymbol(s.symbol)} <span style="font-size:11px;color:var(--dim);margin-left:6px">${gateChips}</span></h3>
+        <span class="badge ${actionCls}">${s.action}</span>
+      </div>
+      ${gateRows}
+      ${rejections}
+      ${levels}
+    </div>`;
+  }).join('');
+
+  el('signal-cards').innerHTML = cards;
+}
+
+function chipFor(label, gate) {
+  if (!gate) return `<span class="gate-chip f">${label}</span>`;
+  return `<span class="gate-chip ${gate.passed ? 'p' : 'f'}">${label}</span>`;
+}
+
+function gateRow(name, gate, detail) {
+  if (!gate) return `<div class="gate-row"><span class="gate-name">${name}</span><span class="badge off">N/A</span></div>`;
+  const cls = gate.passed ? 'p' : 'f';
+  const label = gate.passed ? 'PASS' : 'FAIL';
+  return `<div class="gate-row">
+    <span class="gate-name">${name}<span class="gate-detail">${detail}</span></span>
+    <span class="gate-chip ${cls}">${label}</span>
+  </div>`;
+}
+
+// ── Box States ───────────────────────────────────────
+function renderBoxes() {
+  const boxes = statusData.box_states || {};
+  const keys = Object.keys(boxes);
+  if (keys.length === 0) {
+    el('box-cards').innerHTML = '';
+    el('box-empty').style.display = 'block';
+    return;
+  }
+  el('box-empty').style.display = 'none';
+
+  const cards = keys.sort().map(sym => {
+    const b = boxes[sym];
+    const stateMap = {
+      'IN_BOX_RANGING': ['ranging', 'RANGING'],
+      'BOX_BREACH_PENDING': ['breach', 'BREACH'],
+      'BOX_BROKEN_RECALCULATING': ['broken', 'BROKEN'],
+      'NEW_BOX_STANDBY': ['newbox', 'NEW BOX'],
+      'SHELVED': ['shelved', 'SHELVED'],
+    };
+    const [cls, label] = stateMap[b.state] || ['off', b.state];
+    const dp = getDecimalPlaces(sym);
+    const isJPY = sym.includes('JPY');
+    const pipMul = isJPY ? 100 : 10000;
+    const halfBoxPips = b.half_box ? (b.half_box * pipMul).toFixed(1) : '--';
+    const spreadPips = b.spread ? (b.spread * pipMul).toFixed(1) : '--';
+
+    // OTR from spread
+    const otr = b.half_box > 0 ? ((b.spread * 2) / b.half_box * 100).toFixed(0) : '--';
+
+    // Percentile filtering info
+    let filterInfo = '';
+    if (b.percentile_filtered) {
+      const rawH = b.raw_pdh || b.pdh;
+      const rawL = b.raw_pdl || b.pdl;
+      const spikeH = ((rawH - b.pdh) * pipMul).toFixed(1);
+      const spikeL = ((b.pdl - rawL) * pipMul).toFixed(1);
+      filterInfo = `<div class="box-section">
+        <div class="box-section-title">Percentile Filtering</div>
+        <div class="box-row"><span class="box-key">Raw PDH</span><span class="box-val">${rawH.toFixed(dp)} <span style="color:var(--orange);font-size:10px">(-${spikeH}p spike)</span></span></div>
+        <div class="box-row"><span class="box-key">Raw PDL</span><span class="box-val">${rawL.toFixed(dp)} <span style="color:var(--orange);font-size:10px">(+${spikeL}p spike)</span></span></div>
+      </div>`;
+    }
+
+    // Touch validation
+    const pdhT = b.pdh_touches || 0;
+    const pdlT = b.pdl_touches || 0;
+    const totalT = pdhT + pdlT;
+    const touchOk = pdhT >= 2 && pdlT >= 2;
+    const touchColor = touchOk ? 'var(--green)' : 'var(--red)';
+    const validBadge = b.validated !== false
+      ? '<span class="badge pass" style="font-size:10px">VALID</span>'
+      : '<span class="badge fail" style="font-size:10px">WEAK</span>';
+
+    // Confidence bar
+    const conf = b.age_confidence_pct || 100;
+    const confColor = conf > 70 ? 'var(--green)' : conf > 40 ? 'var(--orange)' : 'var(--red)';
+
+    return `<div class="box-card">
+      <div class="box-card-header">
+        <h3>${fmtSymbol(sym)}</h3>
+        <div style="display:flex;gap:6px;align-items:center">
+          ${validBadge}
+          <span class="badge ${cls}">${label}</span>
+        </div>
+      </div>
+      <div class="box-row"><span class="box-key">PDH</span><span class="box-val">${b.pdh ? b.pdh.toFixed(dp) : '--'}</span></div>
+      <div class="box-row"><span class="box-key">PDL</span><span class="box-val">${b.pdl ? b.pdl.toFixed(dp) : '--'}</span></div>
+      <div class="box-row"><span class="box-key">Half Box</span><span class="box-val">${halfBoxPips} pips</span></div>
+      <div class="box-row"><span class="box-key">Box Width</span><span class="box-val">${b.box_range_pct ? (b.box_range_pct * 100).toFixed(2) + '%' : '--'}</span></div>
+      <div class="box-row"><span class="box-key">OTR (spread)</span><span class="box-val">${otr}%</span></div>
+      <div class="box-row"><span class="box-key">Spread</span><span class="box-val">${spreadPips} pips</span></div>
+      <div class="box-row"><span class="box-key">Box Age</span><span class="box-val">${b.box_age_hours ? b.box_age_hours.toFixed(1) + 'h' : '--'}</span></div>
+      <div class="box-row">
+        <span class="box-key">Confidence</span>
+        <span class="box-val">
+          <span class="bar-track"><span class="bar-fill" style="width:${conf}%;background:${confColor}"></span></span>
+          ${conf.toFixed(0)}%
+        </span>
+      </div>
+
+      <div class="box-section">
+        <div class="box-section-title">Touch Validation</div>
+        <div class="box-row">
+          <span class="box-key">PDH Touches</span>
+          <span class="box-val" style="color:${pdhT >= 2 ? 'var(--green)' : 'var(--red)'}">
+            ${pdhT} ${pdhT >= 2 ? '&#10003;' : '&#10007;'}
+          </span>
+        </div>
+        <div class="box-row">
+          <span class="box-key">PDL Touches</span>
+          <span class="box-val" style="color:${pdlT >= 2 ? 'var(--green)' : 'var(--red)'}">
+            ${pdlT} ${pdlT >= 2 ? '&#10003;' : '&#10007;'}
+          </span>
+        </div>
+        <div class="box-row">
+          <span class="box-key">Total</span>
+          <span class="box-val" style="color:${touchColor};font-weight:700">
+            ${totalT} touches
+          </span>
+        </div>
+      </div>
+
+      ${filterInfo}
+
+      ${b.using_alternative ? '<div style="margin-top:6px;font-size:11px;color:var(--cyan)">Using alternative box</div>' : ''}
+      ${b.gates_required > 2 ? '<div style="margin-top:4px;font-size:11px;color:var(--orange)">Requires ' + b.gates_required + ' gate confirmations (aged box)</div>' : ''}
+      ${b.entry_paused ? '<div style="margin-top:6px;font-size:11px;color:var(--red)">PAUSED: ' + (b.pause_reason || 'unknown') + '</div>' : ''}
+    </div>`;
+  }).join('');
+
+  el('box-cards').innerHTML = cards;
+}
+
+// ── Config ───────────────────────────────────────────
+async function fetchConfig() {
+  try {
+    const r = await fetch(API + '/api/config');
+    configData = await r.json();
+  } catch(e) { console.error('Config fetch failed', e); }
+}
+
+function renderConfig() {
+  const cfg = configData || {};
+  const sections = {
+    'Risk Management': {
+      'Max Trade Risk': fmtPct(cfg.max_trade_risk_pct),
+      'Max Positions': cfg.max_concurrent_positions,
+      'Max Daily Loss': fmtPct(cfg.max_daily_loss_pct),
+      'Min R:R': cfg.min_risk_reward,
+      'SL Floor': fmtPct(cfg.sl_floor_pct),
+    },
+    'Timing': {
+      'Scan Interval': (cfg.scan_interval_seconds || 300) + 's',
+      'Rescan Interval': (cfg.rescan_interval_minutes || 30) + 'min',
+      'Open Wait': (cfg.open_wait_minutes || 15) + 'min',
+      'Max Hold': (cfg.max_hold_minutes || 360) + 'min',
+      'Limit Timeout': (cfg.limit_timeout_minutes || 5) + 'min',
+      'Time Exit Cooldown': (cfg.time_exit_cooldown_minutes || 360) + 'min',
+    },
+    'OTR Thresholds': {
+      'Excellent': '<' + fmtPct(cfg.otr_excellent),
+      'Acceptable': '<' + fmtPct(cfg.otr_acceptable),
+      'Marginal': '<' + fmtPct(cfg.otr_marginal),
+      'Min Net Profit Pips': cfg.min_net_profit_pips,
+    },
+    'Box & Zone': {
+      'Zone Proximity': fmtPct(cfg.zone_proximity_pct),
+      'ATR Period': cfg.atr_period,
+      'ATR High Confidence': fmtPct(cfg.atr_high_confidence_pct),
+      'ATR Valid': fmtPct(cfg.atr_valid_pct),
+      'ATR Minimum': fmtPct(cfg.atr_minimum_pct),
+      'Max Spread/Half': fmtPct(cfg.max_spread_pct_of_half),
+      'Spread Spike Threshold': cfg.spread_spike_threshold + 'x',
+    },
+    'Hourly Green Exit': {
+      'Enabled': cfg.hourly_green_exit_enabled ? 'Yes' : 'No',
+      'Check Interval': (cfg.hourly_green_exit_minutes || 30) + 'min',
+      'Min PnL': '$' + (cfg.hourly_green_exit_min_pnl || 0),
+    },
+    'Universe': {
+      'Mode': cfg.universe_mode,
+      'Tiers': (cfg.instrument_tiers || []).join(', '),
+      'Probation Size': fmtPct(cfg.probation_size_multiplier),
+    },
+  };
+
+  let html = '';
+  for (const [title, rows] of Object.entries(sections)) {
+    const rowsHtml = Object.entries(rows)
+      .filter(([k, v]) => v !== undefined && v !== null)
+      .map(([k, v]) => `<div class="config-row"><span class="config-key">${k}</span><span class="config-val">${v}</span></div>`)
+      .join('');
+    html += `<div class="config-section"><h3>${title}</h3>${rowsHtml}</div>`;
+  }
+  el('config-grid').innerHTML = html;
+}
+
+// ── Toggle & Restart ─────────────────────────────────
+async function toggleTrading() {
+  try {
+    const r = await fetch(API + '/api/toggle', {method:'POST'});
+    const d = await r.json();
+    const on = d.trading_enabled;
+    el('master-check').checked = on;
+    el('master-label').textContent = on ? 'LIVE' : 'PAUSED';
+    el('master-label').style.color = on ? 'var(--green)' : 'var(--red)';
+    toast(d.message || (on ? 'Trading enabled' : 'Trading paused'));
+  } catch(e) { toast('Toggle failed: ' + e.message); }
+}
+
+async function restartBot() {
+  if (!confirm('Restart the bot? Open positions will be preserved via OANDA.')) return;
+  try {
+    const r = await fetch(API + '/api/restart', {method:'POST'});
+    const d = await r.json();
+    toast(d.message || 'Restarted');
+  } catch(e) { toast('Restart failed: ' + e.message); }
+}
+
+// ── Harvester Config ──────────────────────────────────
+let _harvesterCfg = null;
+
+async function fetchHarvesterConfig() {
+  try {
+    const r = await fetch(API + '/api/harvester-config', {headers: authHeaders()});
+    _harvesterCfg = await r.json();
+    renderHarvesterConfig(_harvesterCfg);
+  } catch(e) {
+    console.error('Harvester config fetch failed', e);
+  }
+}
+
+function renderHarvesterConfig(cfg) {
+  const pcts = cfg.tier_equity_pcts || [0.015, 0.030, 0.045];
+  document.getElementById('h-t1-pct').value = (pcts[0] * 100).toFixed(2);
+  document.getElementById('h-t2-pct').value = (pcts[1] * 100).toFixed(2);
+  document.getElementById('h-t3-pct').value = (pcts[2] * 100).toFixed(2);
+
+  const tbody = document.getElementById('harvester-overrides-table');
+  tbody.innerHTML = '';
+  const overrides = cfg.pair_pip_overrides || {};
+  for (const [pair, vals] of Object.entries(overrides)) {
+    tbody.appendChild(makeHarvesterRow(pair, vals));
+  }
+}
+
+function makeHarvesterRow(pair, vals) {
+  const pips    = vals.pips        || [0, 0, 0];
+  const slpips  = vals.sl_lock_pips || [0, 0, 0];
+  const tr = document.createElement('tr');
+  tr.innerHTML = `
+    <td style="padding:4px 8px"><input value="${pair}" placeholder="EUR_USD" style="width:90px;background:var(--bg);border:1px solid var(--border);color:var(--text);padding:3px 6px;border-radius:4px;font-size:12px" class="h-pair"></td>
+    <td style="padding:4px 8px;text-align:center"><input type="number" value="${pips[0]}" min="0" step="1" style="width:56px;background:var(--bg);border:1px solid var(--border);color:var(--text);padding:3px 6px;border-radius:4px;font-size:12px;text-align:center" class="h-p1"></td>
+    <td style="padding:4px 8px;text-align:center"><input type="number" value="${pips[1]}" min="0" step="1" style="width:56px;background:var(--bg);border:1px solid var(--border);color:var(--text);padding:3px 6px;border-radius:4px;font-size:12px;text-align:center" class="h-p2"></td>
+    <td style="padding:4px 8px;text-align:center"><input type="number" value="${pips[2]}" min="0" step="1" style="width:56px;background:var(--bg);border:1px solid var(--border);color:var(--text);padding:3px 6px;border-radius:4px;font-size:12px;text-align:center" class="h-p3"></td>
+    <td style="padding:4px 8px;text-align:center"><input type="number" value="${slpips[0]}" min="0" step="1" style="width:56px;background:var(--bg);border:1px solid var(--border);color:var(--text);padding:3px 6px;border-radius:4px;font-size:12px;text-align:center" class="h-sl1"></td>
+    <td style="padding:4px 8px;text-align:center"><input type="number" value="${slpips[1]}" min="0" step="1" style="width:56px;background:var(--bg);border:1px solid var(--border);color:var(--text);padding:3px 6px;border-radius:4px;font-size:12px;text-align:center" class="h-sl2"></td>
+    <td style="padding:4px 8px;text-align:center"><input type="number" value="${slpips[2]}" min="0" step="1" style="width:56px;background:var(--bg);border:1px solid var(--border);color:var(--text);padding:3px 6px;border-radius:4px;font-size:12px;text-align:center" class="h-sl3"></td>
+    <td style="padding:4px 8px"><button onclick="this.closest('tr').remove()" style="background:none;border:none;color:var(--dim);cursor:pointer;font-size:14px">✕</button></td>
+  `;
+  return tr;
+}
+
+function addHarvesterRow() {
+  document.getElementById('harvester-overrides-table')
+    .appendChild(makeHarvesterRow('', {pips:[10,20,30], sl_lock_pips:[0,10,20]}));
+}
+
+async function saveHarvesterConfig() {
+  const t1 = parseFloat(document.getElementById('h-t1-pct').value) / 100;
+  const t2 = parseFloat(document.getElementById('h-t2-pct').value) / 100;
+  const t3 = parseFloat(document.getElementById('h-t3-pct').value) / 100;
+
+  const overrides = {};
+  document.querySelectorAll('#harvester-overrides-table tr').forEach(tr => {
+    const pair = tr.querySelector('.h-pair')?.value?.trim();
+    if (!pair) return;
+    overrides[pair] = {
+      pips: [
+        parseFloat(tr.querySelector('.h-p1').value) || 0,
+        parseFloat(tr.querySelector('.h-p2').value) || 0,
+        parseFloat(tr.querySelector('.h-p3').value) || 0,
+      ],
+      sl_lock_pips: [
+        parseFloat(tr.querySelector('.h-sl1').value) || 0,
+        parseFloat(tr.querySelector('.h-sl2').value) || 0,
+        parseFloat(tr.querySelector('.h-sl3').value) || 0,
+      ],
+    };
+  });
+
+  const cfg = {
+    tier_equity_pcts:    [t1, t2, t3],
+    sl_lock_equity_pcts: [0, t1, t2],
+    close_pcts:          [0.25, 0.25, 0.25],
+    pair_pip_overrides:  overrides,
+  };
+
+  try {
+    const r = await fetch(API + '/api/harvester-config', {
+      method: 'POST',
+      headers: {...authHeaders(), 'Content-Type': 'application/json'},
+      body: JSON.stringify(cfg),
+    });
+    const d = await r.json();
+    const msg = document.getElementById('harvester-save-msg');
+    if (d.status === 'ok') {
+      msg.textContent = 'Saved — harvester picks up changes on next poll';
+      msg.style.color = 'var(--green)';
+    } else {
+      msg.textContent = d.message || 'Error';
+      msg.style.color = 'var(--red)';
+    }
+    setTimeout(() => { msg.textContent = ''; }, 4000);
+  } catch(e) {
+    console.error('Save failed', e);
+  }
+}
+
+// ── Logs ─────────────────────────────────────────────
+async function fetchLogs() {
+  try {
+    const r = await fetch(API + '/api/logs');
+    const d = await r.json();
+    allLogLines = d.lines || [];
+    renderLogs();
+  } catch(e) { el('log-output').textContent = 'Failed to load logs'; }
+}
+
+function renderLogs() {
+  let lines = allLogLines;
+  if (logFilter !== 'all') {
+    lines = lines.filter(l => {
+      if (logFilter === 'ENTRY') return l.includes('[ENTRY]');
+      if (logFilter === 'EXIT') return l.includes('[EXIT]');
+      if (logFilter === 'ERROR') return l.includes('ERROR');
+      return l.includes(logFilter);
+    });
+  }
+  const html = lines.map(l => {
+    l = l.replace(/</g, '&lt;');
+    if (l.includes('Universe scan')) return `<span class="scan">${l}</span>`;
+    if (l.includes('NO_TRADE')) return `<span class="signal">${l}</span>`;
+    if (l.includes('[ENTRY]')) return `<span class="entry">${l}</span>`;
+    if (l.includes('[EXIT]')) return `<span class="exit">${l}</span>`;
+    if (l.includes('[PARTIAL_TP]')) return `<span class="exit">${l}</span>`;
+    if (l.includes('BREACH PENDING')) return `<span class="pending">${l}</span>`;
+    if (l.includes('ERROR')) return `<span class="error">${l}</span>`;
+    return l;
+  }).join('\n');
+  el('log-output').innerHTML = html || 'No logs matching filter';
+  el('log-output').scrollTop = el('log-output').scrollHeight;
+}
+
+function setLogFilter(btn) {
+  logFilter = btn.dataset.filter;
+  document.querySelectorAll('.log-filter').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  renderLogs();
+}
+
+// ── Helpers ──────────────────────────────────────────
+function el(id) { return document.getElementById(id); }
+function toast(msg) {
+  const t = el('toast'); t.textContent = msg; t.style.display = 'block';
+  setTimeout(() => t.style.display = 'none', 3000);
+}
+
+function fmtSymbol(sym) { return (sym || '').replace('_', '/'); }
+
+function fmtPct(v) {
+  if (v === undefined || v === null) return '--';
+  return (v * 100).toFixed(1) + '%';
+}
+
+function getDecimalPlaces(symbol) {
+  if (!symbol) return 5;
+  if (symbol.includes('JPY')) return 3;
+  return 5;
+}
+
+function truncate(str, max) {
+  if (!str || str.length <= max) return str || '';
+  return str.substring(0, max) + '...';
+}
+
+// ── Init & auto-refresh ─────────────────────────────
+async function init() {
+  await Promise.all([fetchStatus(), fetchConfig()]);
+  renderStatus();
+}
+
+setInterval(() => {
+  countdown--;
+  el('countdown').textContent = countdown;
+  if (countdown <= 0) { countdown = 5; fetchStatus(); }
+}, 1000);
+
+// Refresh config less frequently
+setInterval(() => fetchConfig(), 30000);
+
+init();
+</script>
+</body>
+</html>

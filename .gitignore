@@ -1,0 +1,29 @@
+# Credentials — never commit real keys
+.env
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.egg-info/
+venv/
+.venv/
+
+# Runtime artifacts
+logs/
+data/status.json
+data/state.json
+data/session_cache/
+harvester/logs/
+harvester/harvester_state.json
+harvester_state.json
+harvester_config.json
+*.lock
+mr-scrooge.lock
+
+# Backups
+*.backup.*
+
+# macOS
+.DS_Store
