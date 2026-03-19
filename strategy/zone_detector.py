@@ -159,7 +159,7 @@ class ZoneDetector:
         # 1. Build box — daily (default) or rolling 30m window (experimental)
         if bars_30m is not None and len(bars_30m) >= 10:
             lookback = getattr(self, 'box_30m_lookback', 8)
-            daily_box = self._build_30m_box(symbol, bars_30m, lookback)
+            daily_box = self._build_30m_box(symbol, bars_30m, lookback, daily_bars=daily_bars)
         else:
             daily_box = self._build_daily_box(symbol, daily_bars, hourly_bars)
         if daily_box is None:
@@ -219,7 +219,8 @@ class ZoneDetector:
     def _build_30m_box(self,
                         symbol: str,
                         bars_30m: pd.DataFrame,
-                        lookback: int = 8) -> Optional['DailyBox']:
+                        lookback: int = 8,
+                        daily_bars: pd.DataFrame = None) -> Optional['DailyBox']:
         """
         Builds a box from the last `lookback` completed 30-minute bars.
         PDH = window high, PDL = window low.
@@ -247,15 +248,13 @@ class ZoneDetector:
             current_cls = float(bars_30m.iloc[-1]['close'])
             box_range_pct = box_range / current_cls if current_cls > 0 else 0
 
-            # ATR from the window's true ranges
-            highs   = window['high'].values
-            lows    = window['low'].values
-            closes  = window['close'].values
-            trs = [max(highs[i] - lows[i],
-                       abs(highs[i]  - closes[i - 1]),
-                       abs(lows[i]   - closes[i - 1]))
-                   for i in range(1, len(highs))]
-            atr = float(np.mean(trs)) if trs else box_range
+            # ATR: use real daily ATR if available — avoids tiny 30m-bar ATR
+            # which makes everything appear high volatility and forces hourly pitchfork detection.
+            if daily_bars is not None and len(daily_bars) >= 5:
+                atr = self._calculate_atr(daily_bars, self.atr_period)
+            else:
+                # Fallback: use box_range as proxy for daily range
+                atr = box_range
 
             session_date = str(bars_30m.index[-2])[:16]
 
