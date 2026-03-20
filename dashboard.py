@@ -1,10 +1,10 @@
-#!/usr/bin/env python3
 # ============================================================
 # Copyright (c) Carl Brock 2026. All rights reserved.
 # Use, reproduction, modification, or distribution of this
 # software is permitted only with the express written
 # permission of Carl Brock.
 # ============================================================
+#!/usr/bin/env python3
 """
 Scrooge Dashboard — Web server for monitoring Mr. Scrooge.
 No external dependencies — uses Python stdlib only.
@@ -51,6 +51,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
         elif path == '/api/config':
             self._serve_config()
 
+        elif path == '/api/timeframe':
+            self._serve_timeframe()
+
         elif path == '/api/logs':
             self._serve_logs()
 
@@ -70,6 +73,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
         elif path == '/api/toggle':
             self._toggle_trading()
+
+        elif path == '/api/timeframe':
+            self._set_timeframe()
 
         elif path == '/api/harvester-config':
             self._save_harvester_config()
@@ -233,6 +239,63 @@ class Handler(http.server.BaseHTTPRequestHandler):
         except Exception as e:
             self._json({'status': 'error', 'message': str(e)})
 
+    TIMEFRAME_PRESETS = {
+        '30m': {'box_timeframe': '30m', 'box_30m_lookback': 24,
+                'sl_pips': 5, 'tp1_pips': 10, 'tp2_pips': 30},
+        '1h':  {'box_timeframe': 'daily', 'box_30m_lookback': 8,
+                'sl_pips': 10, 'tp1_pips': 20, 'tp2_pips': 60},
+    }
+
+    def _serve_timeframe(self):
+        json_path = os.path.join(BOT_DIR, 'config.json')
+        tf = '30m'
+        try:
+            if os.path.exists(json_path):
+                with open(json_path) as f:
+                    data = json.load(f)
+                bt = data.get('globals', {}).get('box_timeframe', '30m')
+                tf = '30m' if bt == '30m' else '1h'
+        except Exception:
+            pass
+        self._json({'timeframe': tf})
+
+    def _set_timeframe(self):
+        length = int(self.headers.get('Content-Length', 0))
+        body = self.rfile.read(length)
+        try:
+            incoming = json.loads(body)
+            tf = incoming.get('timeframe', '30m')
+            if tf not in self.TIMEFRAME_PRESETS:
+                self._json({'status': 'error', 'message': f'Unknown timeframe: {tf}'})
+                return
+            preset = self.TIMEFRAME_PRESETS[tf]
+            json_path = os.path.join(BOT_DIR, 'config.json')
+            data = {}
+            if os.path.exists(json_path):
+                with open(json_path) as f:
+                    data = json.load(f)
+            if 'globals' not in data:
+                data['globals'] = {}
+            data['globals'].update(preset)
+            with open(json_path, 'w') as f:
+                json.dump(data, f, indent=2)
+            # Restart bot
+            import subprocess, time
+            subprocess.run(['pkill', '-f', 'python3 main.py'], cwd=BOT_DIR)
+            time.sleep(2)
+            lock = os.path.join(BOT_DIR, 'logs', 'scrooge.lock')
+            if os.path.exists(lock):
+                os.remove(lock)
+            log_fd = open(os.path.join(BOT_DIR, 'logs', 'mrscrooge.log'), 'a')
+            subprocess.Popen(['python3', 'main.py'], cwd=BOT_DIR,
+                             stdout=log_fd, stderr=subprocess.STDOUT,
+                             start_new_session=True)
+            log_fd.close()
+            self._json({'status': 'ok', 'timeframe': tf,
+                        'message': f'Switched to {tf.upper()} mode — bot restarting'})
+        except Exception as e:
+            self._json({'status': 'error', 'message': str(e)})
+
     def _json(self, data):
         body = json.dumps(data, default=str).encode()
         self.send_response(200)
@@ -254,4 +317,5 @@ if __name__ == '__main__':
         try:
             httpd.serve_forever()
         except KeyboardInterrupt:
-            print('\nDashboard stopped')
+            print('
+Dashboard stopped')

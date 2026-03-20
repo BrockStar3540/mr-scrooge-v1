@@ -992,7 +992,7 @@ function truncate(str, max) {
 
 // ── Init & auto-refresh ─────────────────────────────
 async function init() {
-  await Promise.all([fetchStatus(), fetchConfig()]);
+  await Promise.all([fetchStatus(), fetchConfig(), fetchTimeframe()]);
   renderStatus();
 }
 

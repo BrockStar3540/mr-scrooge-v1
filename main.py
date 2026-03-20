@@ -152,6 +152,19 @@ CONFIG = {
 }
 
 # ============================================================
+# ── Runtime config.json overrides (written by dashboard toggle) ──────────────
+def _apply_config_overrides():
+    _path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'config.json')
+    if os.path.exists(_path):
+        try:
+            with open(_path) as _f:
+                _ov = json.load(_f)
+            for k, v in _ov.get('globals', {}).items():
+                CONFIG[k] = v
+        except Exception:
+            pass
+_apply_config_overrides()
+
 # SHUTDOWN HANDLER
 # ============================================================
 
