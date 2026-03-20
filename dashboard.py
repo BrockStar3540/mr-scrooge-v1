@@ -1,10 +1,10 @@
+#!/usr/bin/env python3
 # ============================================================
 # Copyright (c) Carl Brock 2026. All rights reserved.
 # Use, reproduction, modification, or distribution of this
 # software is permitted only with the express written
 # permission of Carl Brock.
 # ============================================================
-#!/usr/bin/env python3
 """
 Scrooge Dashboard — Web server for monitoring Mr. Scrooge.
 No external dependencies — uses Python stdlib only.
@@ -243,7 +243,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
         '30m': {'box_timeframe': '30m', 'box_30m_lookback': 24,
                 'sl_pips': 5, 'tp1_pips': 10, 'tp2_pips': 30},
         '1h':  {'box_timeframe': 'daily', 'box_30m_lookback': 8,
-                'sl_pips': 10, 'tp1_pips': 20, 'tp2_pips': 60},
+                'sl_pips': 5, 'tp1_pips': 10, 'tp2_pips': 30},
     }
 
     def _serve_timeframe(self):
@@ -317,5 +317,4 @@ if __name__ == '__main__':
         try:
             httpd.serve_forever()
         except KeyboardInterrupt:
-            print('
-Dashboard stopped')
+            print('\nDashboard stopped')
