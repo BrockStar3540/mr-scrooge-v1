@@ -103,7 +103,7 @@ CONFIG = {
     'max_daily_loss_pct':       0.075,   # 7.5% daily halt — allows 5 full stops at 1.5% risk before shutdown
     'min_risk_reward':          1.60,    # Reduced to increase qualified setups while keeping RR > 1.5 floor
     'sl_pips':                  10,      # Fixed SL: 10 pips beyond zone entry
-    'tp1_pips':                 10,      # Fixed TP1: 20 pips from entry (quick partial)
+    'tp1_pips':                 5,       # Fixed TP1: 5 pips from entry — harvester secures 5 pips
     'tp2_pips':                 30,      # Fixed TP2: 40 pips from entry (full exit)
 
     # Timing
@@ -936,7 +936,7 @@ def process_instrument(symbol: str, ctx: dict) -> Optional[dict]:
         # Recalculate SL/TP from actual fill price (not zone trigger).
         # This corrects for slippage when price has moved through the zone.
         _sl_pips  = CONFIG.get('sl_pips',  10)
-        _tp1_pips = CONFIG.get('tp1_pips', 10)
+        _tp1_pips = CONFIG.get('tp1_pips', 5)
         _tp2_pips = CONFIG.get('tp2_pips', 30)
         if direction == 'BUY':
             _sl_fill  = round(actual_fill - _sl_pips  * pip_size, 5)
