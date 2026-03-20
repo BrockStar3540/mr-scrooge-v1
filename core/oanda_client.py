@@ -5,6 +5,12 @@
 # permission of Carl Brock.
 # ============================================================
 # ============================================================
+# Copyright (c) Carl Brock 2026. All rights reserved.
+# Use, reproduction, modification, or distribution of this
+# software is permitted only with the express written
+# permission of Carl Brock.
+# ============================================================
+# ============================================================
 # MR. SCROOGE — OANDA CLIENT
 # OANDA v20 REST API client.
 # Handles bar fetching (5M, 1H, D), live spreads, order placement,
@@ -289,9 +295,10 @@ class OANDAClient:
             return None
 
     def get_equity(self) -> Optional[float]:
+        """Returns account balance (cash only, excludes unrealized P&L)."""
         summary = self.get_account_summary()
         if summary:
-            return float(summary.get('NAV', 0))
+            return float(summary.get('balance', 0))
         return None
 
     def get_margin_used(self) -> Optional[float]:
@@ -345,8 +352,8 @@ class OANDAClient:
             summary = self.get_account_summary()
             if summary:
                 margin_used = float(summary.get('marginUsed', 0))
-                nav = float(summary.get('NAV', 1))
-                return margin_used / nav if nav > 0 else 1.0
+                balance = float(summary.get('balance', 1))
+                return margin_used / balance if balance > 0 else 1.0
         except:
             pass
         return 0.0
