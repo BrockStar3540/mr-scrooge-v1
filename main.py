@@ -779,9 +779,11 @@ def process_instrument(symbol: str, ctx: dict) -> Optional[dict]:
     if signal.all_gates_passed:
         ctx.setdefault('_last_signal_scores', {})[symbol] = signal.score
 
-    if not signal.all_gates_passed or signal.action not in ('ENTER_LONG', 'ENTER_SHORT') or at_max_positions:
+    if not signal.all_gates_passed or signal.action not in ('ENTER_LONG', 'ENTER_SHORT'):
         ctx.get('pending_reentry', {}).pop(symbol, None)
         return None
+    # at_max_positions: still store as candidate so dashboard shows ON DECK correctly.
+    # Firing is gated in the post-loop ranking step.
 
     # Zone debounce — prevent same zone from re-firing within 20 min (4 candles)
     # Round entry price to nearest 5 pips so micro-drift doesn't generate phantom new zone keys
@@ -793,7 +795,7 @@ def process_instrument(symbol: str, ctx: dict) -> Optional[dict]:
     if last_fired and (datetime.now() - last_fired).total_seconds() < 1200:
         decision_log.info(f'{symbol}: Zone {signal.entry_price:.5f} recently triggered — skipping')
         return None
-    zone_cache[zone_key] = datetime.now()
+    # zone_cache is updated in _fire_entry_candidate (only on actual fire, not on ranking queue)
 
     # Open wait gate — block new entries for first 15 min after session start
     # Exception: Tier 1 zone + 80%+ ATR + named signal → allow at 50% size
@@ -847,6 +849,12 @@ def _fire_entry_candidate(cand: dict, ctx: dict):
     pending_reentry  = cand['pending_reentry']
     open_wait_override = cand['open_wait_override']
     zone_map         = cand['zone_map']
+
+    # Mark zone as recently triggered (prevents duplicate entries for 20 min)
+    _pip_size_zc = 0.01 if 'JPY' in symbol else 0.0001
+    _rounded_zc  = round(signal.entry_price / (_pip_size_zc * 5)) * (_pip_size_zc * 5)
+    _zone_key    = f"{symbol}_{_rounded_zc:.5f}_{signal.action}"
+    ctx.setdefault('zone_cache', {})[_zone_key] = datetime.now()
 
     oanda         = ctx['oanda']
     router        = ctx['router']
@@ -1275,27 +1283,27 @@ def main():
 
         # ── Ranking: fire best-scored entry candidate ──
         _candidates = ctx.pop('_cycle_entry_candidates', [])
-        if _candidates and ctx['position_count'] < CONFIG['max_concurrent_positions']:
+        if _candidates:
             _candidates.sort(key=lambda c: c['signal'].score, reverse=True)
             _best = _candidates[0]
             _others = ', '.join(
                 f'{c["symbol"]}={c["signal"].score}' for c in _candidates[1:]
             ) or 'none'
-            decision_log.info(
-                f'RANKING: {len(_candidates)} candidate(s) | winner={_best["symbol"]} '
-                f'score={_best["signal"].score} | others: {_others}'
-            )
+            # Always mark on_deck so dashboard shows the best setup regardless of position count
             ctx['_on_deck_symbol'] = _best['symbol']
             ctx['_on_deck_score']  = _best['signal'].score
-            try:
-                _entry_event = _fire_entry_candidate(_best, ctx)
-            except Exception as _e:
-                log.error(f'_fire_entry_candidate error: {_e}', exc_info=True)
-                _entry_event = None
+            decision_log.info(
+                f'RANKING: {len(_candidates)} candidate(s) | on_deck={_best["symbol"]} '
+                f'score={_best["signal"].score} | others: {_others}'
+            )
+            if ctx['position_count'] < CONFIG['max_concurrent_positions']:
+                try:
+                    _entry_event = _fire_entry_candidate(_best, ctx)
+                except Exception as _e:
+                    log.error(f'_fire_entry_candidate error: {_e}', exc_info=True)
         else:
-            if not _candidates:
-                ctx['_on_deck_symbol'] = None
-                ctx['_on_deck_score']  = 0
+            ctx['_on_deck_symbol'] = None
+            ctx['_on_deck_score']  = 0
 
         # ── Write dashboard status ──
         ctx['_cycle_count'] = ctx.get('_cycle_count', 0) + 1
