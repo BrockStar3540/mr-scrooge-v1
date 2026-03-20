@@ -6,7 +6,6 @@
 # software is permitted only with the express written
 # permission of Carl Brock.
 # ============================================================
-# ============================================================
 # Copyright (c) Carl Brock 2026. All rights reserved.
 # Use, reproduction, modification, or distribution of this
 # software is permitted only with the express written
@@ -97,7 +96,6 @@ trade_log.addHandler(trade_handler)
 CONFIG = {
     # Risk — bigger conviction, fewer trades
     'margin_utilization_pct':  0.80,     # deploy 80% of equity as margin per trade
-    'leverage':                50,       # forced leverage (50:1 = 2% margin rate)
     'max_concurrent_positions': 1,       # 1 max — concentrate capital in best setup
     'box_timeframe':    '30m',            # 'daily' (default) or '30m' (rolling window experiment)
     'box_30m_lookback': 24,               # 30m bars in window when box_timeframe='30m' (24 = 12 hours ≈ daily range)

@@ -748,7 +748,7 @@ function renderConfig() {
   const sections = {
     'Position Sizing': {
       'Margin Utilization': fmtPct(cfg.margin_utilization_pct),
-      'Leverage': (cfg.leverage || 50) + ':1',
+      'Margin Rate': 'Per instrument (OANDA)',
       'Max Positions': cfg.max_concurrent_positions,
       'Max EUR Positions': cfg.max_eur_positions,
       'Max Daily Loss': fmtPct(cfg.max_daily_loss_pct),
@@ -758,7 +758,6 @@ function renderConfig() {
       'TP1 — Ratchet Trigger': (cfg.tp1_pips || 5) + ' pips',
       'TP2 — Full Exit': (cfg.tp2_pips || 30) + ' pips',
       'Min R:R': cfg.min_risk_reward,
-      'Min Net Profit': (cfg.min_net_profit_pips || 7) + ' pips',
     },
     'Timing': {
       'Scan Interval': (cfg.scan_interval_seconds || 300) + 's',
