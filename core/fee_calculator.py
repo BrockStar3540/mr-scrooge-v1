@@ -108,7 +108,7 @@ class OANDAFeeCalculator:
         cfg = config or {}
         # OTR thresholds
         self.otr_excellent  = cfg.get('otr_excellent',  0.05)
-        self.otr_acceptable = cfg.get('otr_acceptable', 0.10)
+        self.otr_acceptable = cfg.get('otr_acceptable', 0.15)
         self.otr_marginal   = cfg.get('otr_marginal',   0.15)
         # Minimum viable
         self.min_net_profit  = cfg.get('min_net_profit',  5.0)

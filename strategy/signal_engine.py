@@ -102,8 +102,8 @@ class SignalResult:
     # Entry details (populated only when action is ENTER_*)
     entry_price: float
     stop_price: float
-    tp1_price: float            # First partial — next magic line
-    tp2_price: float            # Second partial — center or further
+    tp1_price: float            # Ratchet trigger — SL locks here when hit
+    tp2_price: float            # Full exit — OANDA native TP closes position here
     risk_points: float
     reward_points: float
     risk_reward_ratio: float
@@ -962,7 +962,7 @@ class SignalEngine:
         daily_box = zone_map.daily_box
 
         # Fixed pip targets:
-        #   TP1 = 10 pips -- quick partial (2:1 vs 5-pip SL)
+        #   TP1 = 5 pips -- ratchet trigger (SL locks here when hit)
         #   TP2 = 30 pips -- full exit (6:1 vs SL); SL ratchets to breakeven after TP1 hit
         _center  = daily_box.center
         pip_size = 0.01 if _center > 20 else 0.0001

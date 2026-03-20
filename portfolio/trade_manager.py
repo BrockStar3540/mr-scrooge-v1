@@ -69,11 +69,9 @@ class OpenPosition:
     partial_1_taken: bool
     partial_2_taken: bool
     last_hourly_close: float    # For hourly trailing stop
-    hourly_green_checks_done: int  # Number of hourly green-exit checkpoints already evaluated
     status: str                 # 'open', 'partial', 'closed'
     stop_moved_at: str          # When stop was last adjusted
     oanda_trade_id: str = ''    # Numeric OANDA trade ID (e.g. '727') for stop/close management
-    green_exit_tp_set: float = 0.0  # Price of last successfully-set green exit TP (0 = none set)
     highest_price: float = 0.0  # Peak price since entry (long) — for hybrid trailing stop
     lowest_price: float = 0.0   # Trough price since entry (short) — for hybrid trailing stop
 
@@ -123,13 +121,7 @@ class TradeManager:
 
     def __init__(self, config: dict):
         # Partial profit ratios
-        self.partial_1_pct = config.get('partial_1_pct', 0.50)  # 50% at TP1 (was 40%)
-        self.partial_2_pct = config.get('partial_2_pct', 0.30)  # 30% at TP2 (20% runs trailing)
-        # Remaining 20% runs with trailing stop
 
-        # Break-even trigger
-        # Move stop to BE when unrealized profit exceeds this multiple of risk
-        self.be_trigger_rr = config.get('be_trigger_rr', 1.0)   # 1.0R profit → move BE (raised from 0.5 — too tight, normal noise triggered it)
 
         # Re-entry rules
         self.max_reentries_per_setup = config.get('max_reentries_per_setup', 3)  # MASTER_THEORY: re-enter as long as zone holds
@@ -140,10 +132,6 @@ class TradeManager:
 
         # Time exit
         self.max_hold_minutes = config.get('max_hold_minutes', 240)  # MASTER_THEORY: hold while valid; 4h backstop only
-        self.hourly_green_exit_enabled = bool(config.get('hourly_green_exit_enabled', False))
-        self.hourly_green_exit_minutes = max(1, int(config.get('hourly_green_exit_minutes', 60)))
-        self.hourly_green_exit_min_pnl = float(config.get('hourly_green_exit_min_pnl', 0.002))  # legacy
-        self.green_exit_min_pct = float(config.get('green_exit_min_pct', 0.00125))  # 0.125% equity — 50% of 0.25% target
 
         # Track active positions and re-entry counts
         self.open_positions: Dict[str, OpenPosition] = {}
@@ -203,8 +191,7 @@ class TradeManager:
                 partial_1_taken=(initial_units != current_units),
                 partial_2_taken=False,
                 last_hourly_close=entry_price,
-                hourly_green_checks_done=0,
-                status='open',
+                    status='open',
                 stop_moved_at=entry_time,
                 oanda_trade_id=oanda_id,
                 highest_price=entry_price,
@@ -259,7 +246,6 @@ class TradeManager:
             partial_1_taken=False,
             partial_2_taken=False,
             last_hourly_close=actual_fill_price,
-            hourly_green_checks_done=0,
             status='open',
             stop_moved_at=datetime.now().isoformat(),
             oanda_trade_id=oanda_trade_id,
@@ -354,9 +340,9 @@ class TradeManager:
                         'reason': f'Break-even: price {current_price:.5f} is 50% of way to TP1 {pos.take_profit_1:.5f}'
                     })
 
-        # Stage 2: Move SL to TP1 when price passes TP1 — locks in TP1 profit.
-        # Uses partial_1_taken as the 'TP1 passed' sentinel (repurposed from old partial framework).
-        # OANDA native TP at TP2 will close the full remaining position at limit price.
+        # Stage 2: Move SL to TP1 when price passes TP1 — locks in 5-pip profit.
+        # partial_1_taken = sentinel flag that TP1 level was crossed (SL now guaranteed above entry).
+        # OANDA native TP at TP2 closes the full position.
         if pos.take_profit_1 > 0 and not pos.partial_1_taken:
             if pos.direction == 'long':
                 tp1_cond = current_price >= pos.take_profit_1
@@ -618,18 +604,6 @@ class TradeManager:
             return current_price <= pos.current_stop
         else:
             return current_price >= pos.current_stop
-
-    def _is_tp_reached(self,
-                        pos: OpenPosition,
-                        current_price: float,
-                        tp_level: int) -> bool:
-        tp = pos.take_profit_1 if tp_level == 1 else pos.take_profit_2
-        if tp == 0.0:
-            return False  # Zero = unset (e.g. reconciled positions) — never trigger
-        if pos.direction == 'long':
-            return current_price >= tp
-        else:
-            return current_price <= tp
 
     def _should_move_to_be_early(self,
                                    pos: OpenPosition,

@@ -89,12 +89,8 @@ trade_log.addHandler(trade_handler)
 
 CONFIG = {
     # Risk — bigger conviction, fewer trades
-    'max_trade_risk_pct':      0.01,     # Risk 1% of equity per trade -- sized by sl_pips
     'margin_utilization_pct':  0.80,     # deploy 80% of equity as margin per trade
     'leverage':                50,       # forced leverage (50:1 = 2% margin rate)
-    'target_profit_pct':       0.0025,   # 0.25% of equity per trade — profit-anchored sizing target
-    'tp1_allocation_pct':      0.40,     # 40% of position closes at TP1 — sizing anchors to this partial
-    'green_exit_min_pct':      0.00125,  # 50% of target (0.125%) — equity % required to trigger green exit
     'max_concurrent_positions': 1,       # 1 max — concentrate capital in best setup
     'box_timeframe':    '30m',            # 'daily' (default) or '30m' (rolling window experiment)
     'box_30m_lookback': 24,               # 30m bars in window when box_timeframe='30m' (24 = 12 hours ≈ daily range)
@@ -111,9 +107,6 @@ CONFIG = {
     'rescan_interval_minutes':  30,      # Universe rescan
     'open_wait_minutes':        15,      # Wait after market open
     'max_hold_minutes':         360,     # 6 hours (raised from 180 — forex trends need time to develop)
-    'hourly_green_exit_enabled': True,   # Close net-green positions every cycle to recycle capital
-    'hourly_green_exit_minutes': 60,     # Check once per hour (was 5 — too noisy, violated 1H management rule)
-    'hourly_green_exit_min_pnl': 0.002,  # 0.2% net profit required (was 0.0 — fired on trivial moves)
 
     # Stop loss floor — minimum SL distance to prevent fakeout stops
     'sl_floor_pct':             0.0050,  # 0.50% min SL distance from entry (raised from 0.30% — too tight)
@@ -148,7 +141,6 @@ CONFIG = {
     'instrument_tiers':        ['majors'],
     'universe_mode':           'standard',  # balanced | standard | aggressive
     'apply_probation_size':    True,
-    'probation_size_multiplier': 0.65,      # 65% size for probation pairs
 }
 
 # ============================================================
@@ -812,7 +804,7 @@ def process_instrument(symbol: str, ctx: dict) -> Optional[dict]:
             ctx.get('pending_reentry', {}).pop(symbol, None)
             return None
         open_wait_override = True
-        decision_log.info(f'{symbol}: Open wait OVERRIDE — Tier 1 + 80%+ ATR + {signal.pitchfork.signal_type}, 50% size')
+        decision_log.info(f'{symbol}: Open wait OVERRIDE — Tier 1 + 80%+ ATR + {signal.pitchfork.signal_type}')
 
     # Validate pending re-entry if present
     if pending_reentry:
