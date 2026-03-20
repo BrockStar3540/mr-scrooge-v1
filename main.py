@@ -90,7 +90,8 @@ trade_log.addHandler(trade_handler)
 CONFIG = {
     # Risk — bigger conviction, fewer trades
     'max_trade_risk_pct':      0.01,     # Risk 1% of equity per trade -- sized by sl_pips
-    'margin_utilization_pct':  0.50,     # deploy 50% of equity as margin per trade
+    'margin_utilization_pct':  0.80,     # deploy 80% of equity as margin per trade
+    'leverage':                50,       # forced leverage (50:1 = 2% margin rate)
     'target_profit_pct':       0.0025,   # 0.25% of equity per trade — profit-anchored sizing target
     'tp1_allocation_pct':      0.40,     # 40% of position closes at TP1 — sizing anchors to this partial
     'green_exit_min_pct':      0.00125,  # 50% of target (0.125%) — equity % required to trigger green exit
@@ -818,36 +819,26 @@ def process_instrument(symbol: str, ctx: dict) -> Optional[dict]:
     if risk_points <= 0:
         return None
 
-    # Risk-based sizing: units = risk_dollars / (sl_pips * pip_value_per_unit)
-    # pip_value is USD per pip per unit -- correct for all pairs including JPY crosses.
-    # A 5-pip adverse move costs exactly (5 * pip_value * units) = max_trade_risk_pct * equity.
-    _sl_pips    = CONFIG.get('sl_pips', 5)
-    target_risk = equity * CONFIG['max_trade_risk_pct']
-    base_units  = target_risk / (_sl_pips * pip_value) if pip_value > 0 else 0
+    # Margin-based sizing: deploy 80% of equity at 50:1 leverage.
+    # base_price_usd: USD value of 1 unit of base currency (correct for JPY crosses too).
+    _leverage      = CONFIG.get('leverage', 50)
+    _margin_rate   = 1.0 / _leverage
+    base_price_usd = pip_value * current_price / pip_size if pip_size > 0 else current_price
+    target_margin  = equity * CONFIG['margin_utilization_pct']
+    base_units     = target_margin / (base_price_usd * _margin_rate) if base_price_usd > 0 else 0
 
-    # Size multipliers
-    size_mult = float(box_machine.get_position_size_multiplier(symbol))
-    if open_wait_override:
-        size_mult *= 0.5  # 50% size during open wait exception
-
-    _kz_hour = datetime.now(timezone.utc).hour
-    if not (7 <= _kz_hour < 22):
-        size_mult *= 0.50
-        decision_log.info(
-            f'{symbol}: Outside peak hours ({_kz_hour:02d}:xx UTC) — size ×0.50'
-        )
-
-    units = round(base_units * size_mult)
+    # Size: 80% equity at 50:1 -- no decompressors, no off-peak cuts
+    units = round(base_units)
 
     # Logging
     risk_pips  = risk_points / pip_size
     tp1_pips   = abs(signal.tp1_price - current_price) / pip_size
     pip_dollar = units * pip_value  # $ per pip on full position
     decision_log.info(
-                f'{symbol}: Risk-based sizing -- equity ${equity:.2f} | '
-        f'risk target ${target_risk:.2f} ({CONFIG["max_trade_risk_pct"]*100:.1f}%) | '
-        f'sl_pips {_sl_pips} | pip_value ${pip_value:.6f} | units {units:.0f} | '
-        f'${pip_dollar:.2f}/pip | SL {risk_pips:.1f}p | TP1 {tp1_pips:.1f}p'
+                f'{symbol}: Margin 80%/50:1 -- equity ${equity:.2f} | '
+        f'margin ${target_margin:.2f} | base_usd ${base_price_usd:.4f} | '
+        f'units {units:.0f} | ${pip_dollar:.2f}/pip | '
+        f'SL {risk_pips:.1f}p | TP1 {tp1_pips:.1f}p'
     )
 
     if units < 1:
@@ -928,6 +919,35 @@ def process_instrument(symbol: str, ctx: dict) -> Optional[dict]:
         actual_fill = result.get('fill_price') or signal.entry_price
         if actual_fill <= 0:
             actual_fill = signal.entry_price
+
+        # Recalculate SL/TP from actual fill price (not zone trigger).
+        # This corrects for slippage when price has moved through the zone.
+        _sl_pips  = CONFIG.get('sl_pips',  5)
+        _tp1_pips = CONFIG.get('tp1_pips', 10)
+        _tp2_pips = CONFIG.get('tp2_pips', 30)
+        if direction == 'BUY':
+            _sl_fill  = round(actual_fill - _sl_pips  * pip_size, 5)
+            _tp1_fill = round(actual_fill + _tp1_pips * pip_size, 5)
+            _tp2_fill = round(actual_fill + _tp2_pips * pip_size, 5)
+        else:
+            _sl_fill  = round(actual_fill + _sl_pips  * pip_size, 5)
+            _tp1_fill = round(actual_fill - _tp1_pips * pip_size, 5)
+            _tp2_fill = round(actual_fill - _tp2_pips * pip_size, 5)
+        signal.stop_price  = _sl_fill
+        signal.tp1_price   = _tp1_fill
+        signal.tp2_price   = _tp2_fill
+        signal.entry_price = actual_fill
+        _oanda_tid = result.get('oanda_trade_id', '')
+        if _oanda_tid:
+            oanda.modify_trade_stop(_oanda_tid, _sl_fill)
+            oanda.modify_trade_tp(_oanda_tid, _tp2_fill)
+            decision_log.info(
+                f'{symbol}: Fill-anchored -- fill {actual_fill:.5f} | '
+                f'SL {_sl_fill:.5f} ({_sl_pips}p) | '
+                f'TP1 {_tp1_fill:.5f} ({_tp1_pips}p) | '
+                f'TP2 {_tp2_fill:.5f} ({_tp2_pips}p)'
+            )
+
         overhead_cost_usd = total_overhead * units
         trade_manager.register_entry(
             trade_id=trade_id,
