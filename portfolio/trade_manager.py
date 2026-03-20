@@ -310,13 +310,13 @@ class TradeManager:
 
         # OANDA native TP (TP2) and SL handle all fills — bot never places market orders.
         # Manage position by advancing SL only:
-        #   Stage 1: Move SL to break-even when price is 50% of way to TP1
-        #   Stage 2: Move SL to TP1 level when price passes TP1 (locks TP1 profit)
-        #   Stage 3: Hybrid trailing stop after break-even (hourly candle + ATR + profit lock)
+        #   Stage 1: Move SL to break-even at 50% of TP1 (secures 5 pips when TP1=10)
+        #   Stage 2: Move SL to TP1 level when price passes TP1 (locks 10-pip profit)
+        #   Stage 3: Hybrid trailing stop after TP1 (hourly candle + ATR + profit lock)
         # OANDA native TP at TP2 closes the full remaining position at limit price.
 
         # Stage 1: Move SL to break-even when price is 50% of way to TP1.
-        # This proactively protects against reversal early in the trade.
+        # With TP1=10 pips, breakeven triggers at +5 pips — secures minimum profit.
         if not pos.break_even_achieved and pos.take_profit_1 > 0:
             if pos.direction == 'long':
                 half_to_tp1 = pos.entry_price + 0.5 * (pos.take_profit_1 - pos.entry_price)
@@ -340,7 +340,7 @@ class TradeManager:
                         'reason': f'Break-even: price {current_price:.5f} is 50% of way to TP1 {pos.take_profit_1:.5f}'
                     })
 
-        # Stage 2: Move SL to TP1 when price passes TP1 — locks in 5-pip profit.
+        # Stage 2: Lock SL to TP1 level when price moves beyond TP1 — secures 5-pip profit.
         # partial_1_taken = sentinel flag that TP1 level was crossed (SL now guaranteed above entry).
         # OANDA native TP at TP2 closes the full position.
         if pos.take_profit_1 > 0 and not pos.partial_1_taken:

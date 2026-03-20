@@ -99,7 +99,7 @@ CONFIG = {
     'max_daily_loss_pct':       0.075,   # 7.5% daily halt — allows 5 full stops at 1.5% risk before shutdown
     'min_risk_reward':          1.60,    # Reduced to increase qualified setups while keeping RR > 1.5 floor
     'sl_pips':                  10,      # Fixed SL: 10 pips beyond zone (from fill)
-    'tp1_pips':                 5,       # Fixed TP1: ratchet trigger — SL locks to entry+5 when hit
+    'tp1_pips':                 10,      # Fixed TP1: ratchet trigger — at 50% (+5p) SL moves to BE, at TP1 SL locks to entry+10
     'tp2_pips':                 30,      # Fixed TP2: full exit — OANDA native TP closes position
 
     # Timing
