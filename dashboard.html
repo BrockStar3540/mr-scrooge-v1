@@ -175,7 +175,6 @@ tr.rejected-row td { color:var(--dim); }
       <span id="master-label" style="font-size:12px;font-weight:700;color:var(--green)">LIVE</span>
     </div>
     <div id="tf-toggle" style="display:flex;align-items:center;gap:4px;margin-left:8px">
-      <button id="tf-30m" onclick="setTimeframe('30m')" style="font-size:11px;font-weight:700;padding:3px 10px;border:1px solid var(--border);border-radius:4px;background:var(--card);color:var(--dim);cursor:pointer">30M</button>
       <button id="tf-1h"  onclick="setTimeframe('1h')"  style="font-size:11px;font-weight:700;padding:3px 10px;border:1px solid var(--border);border-radius:4px;background:var(--card);color:var(--dim);cursor:pointer">1H</button>
     </div>
   </div>
@@ -197,7 +196,7 @@ tr.rejected-row td { color:var(--dim); }
 <div class="status-bar">
   <div class="stat"><div class="label">Equity</div><div class="value" id="s-equity">--</div></div>
   <div class="stat"><div class="label">Daily PnL</div><div class="value" id="s-pnl">--</div></div>
-  <div class="stat"><div class="label">Daily Loss</div><div class="value" id="s-loss">--</div></div>
+  <div class="stat"><div class="label">Realized P/L</div><div class="value" id="s-loss">--</div></div>
   <div class="stat"><div class="label">Positions</div><div class="value" id="s-positions">--</div></div>
   <div class="stat"><div class="label">Scanned</div><div class="value" id="s-scanned">--</div></div>
   <div class="stat"><div class="label">Viable</div><div class="value" id="s-viable">--</div></div>
@@ -406,11 +405,11 @@ function renderStatus() {
   pnlEl.textContent = (pnl >= 0 ? '+' : '') + '$' + pnl.toFixed(2);
   pnlEl.className = 'value ' + (pnl >= 0 ? 'green' : 'red');
 
-  // Daily loss %
-  const loss = (d.daily_loss_pct || 0) * 100;
-  const lossEl = el('s-loss');
-  lossEl.textContent = loss.toFixed(2) + '%';
-  lossEl.className = 'value ' + (loss > 3 ? 'red' : loss > 1 ? 'orange' : '');
+  // Realized P/L
+  const alltime = d.alltime_pl || 0;
+  const alltimeEl = el('s-loss');
+  alltimeEl.textContent = (alltime >= 0 ? '+' : '') + '$' + alltime.toFixed(2);
+  alltimeEl.className = 'value ' + (alltime >= 0 ? 'green' : 'red');
 
   // Positions
   el('s-positions').textContent = d.positions_open || 0;
@@ -619,6 +618,22 @@ function gateRow(name, gate, detail) {
   </div>`;
 }
 
+
+// Gate chips for box cards (cross-reference signals data)
+function gateChipsForSym(sym) {
+  const signals = statusData.signals || [];
+  const sig = signals.find(s => s.symbol === sym);
+  if (!sig || !sig.gates) return '<span style="font-size:10px;color:var(--dim)">No signal data</span>';
+  const g = sig.gates;
+  return [
+    chipFor('Z', g.zone),
+    chipFor('ATR', g.atr),
+    chipFor('SM', g.sucker_move),
+    chipFor('PF', g.pitchfork),
+    chipFor('OTR', g.otr),
+  ].join(' ');
+}
+
 // ── Box States ───────────────────────────────────────
 function renderBoxes() {
   const boxes = statusData.box_states || {};
@@ -687,6 +702,7 @@ function renderBoxes() {
           <span class="badge ${cls}">${label}</span>
         </div>
       </div>
+      <div style="margin-bottom:8px">${gateChipsForSym(sym)}</div>
       <div class="box-row"><span class="box-key">PDH</span><span class="box-val">${b.pdh ? b.pdh.toFixed(dp) : '--'}</span></div>
       <div class="box-row"><span class="box-key">PDL</span><span class="box-val">${b.pdl ? b.pdl.toFixed(dp) : '--'}</span></div>
       <div class="box-row"><span class="box-key">Half Box</span><span class="box-val">${halfBoxPips} pips</span></div>
@@ -775,8 +791,6 @@ function renderConfig() {
       'Min Net Profit': (cfg.min_net_profit_pips || 7) + ' pips',
     },
     'Box & Zone': {
-      'Box Timeframe': cfg.box_timeframe || '30m',
-      '30M Lookback': (cfg.box_30m_lookback || 24) + ' bars',
       'Zone Proximity': fmtPct(cfg.zone_proximity_pct),
       'ATR Period': cfg.atr_period,
       'ATR High Confidence': fmtPct(cfg.atr_high_confidence_pct),
@@ -1005,17 +1019,13 @@ async function fetchTimeframe() {
     const r = await fetch(API + '/api/timeframe');
     if (!r.ok) return;
     const d = await r.json();
-    _updateTfButtons(d.timeframe || '30m');
+    _updateTfButtons('1h');
   } catch(e) {}
 }
 
 function _updateTfButtons(tf) {
-  const b30 = el('tf-30m'), b1h = el('tf-1h');
-  if (!b30 || !b1h) return;
   const active  = 'background:var(--accent);color:#000;border-color:var(--accent)';
   const inactive = 'background:var(--card);color:var(--dim);border-color:var(--border)';
-  b30.style.cssText = b30.style.cssText.replace(/background[^;]+;color[^;]+;border-color[^;]+/, tf === '30m' ? active : inactive) || '';
-  b30.setAttribute('style', 'font-size:11px;font-weight:700;padding:3px 10px;border:1px solid;border-radius:4px;cursor:pointer;' + (tf === '30m' ? active : inactive));
   b1h.setAttribute('style',  'font-size:11px;font-weight:700;padding:3px 10px;border:1px solid;border-radius:4px;cursor:pointer;' + (tf === '1h'  ? active : inactive));
 }
 

@@ -1306,10 +1306,12 @@ def main():
                         'on_deck': ctx.get('_on_deck_symbol') == _sym,
                     }
             _eq = ctx['oanda'].get_equity() or ctx['equity_start']
+            _daily_realized = ctx['oanda'].get_daily_realized_pl()
+            _alltime_pl = ctx['oanda'].get_alltime_realized_pl()
             write_status(
                 cycle=ctx['_cycle_count'],
                 equity=_eq,
-                daily_pnl=round(_eq - ctx['equity_start'], 2),
+                daily_pnl=_daily_realized,
                 daily_loss_pct=ctx['daily_loss'] / ctx['equity_start'] if ctx['equity_start'] > 0 else 0,
                 positions=ctx['trade_manager'].get_all_open(),
                 signal_results=ctx.get('_last_signals', []),
@@ -1318,6 +1320,7 @@ def main():
                 active_instruments=ctx['active_instruments'],
                 extra={
                     'trading_enabled': True,
+                    'alltime_pl': _alltime_pl,
                     'screen_results': ctx.get('_last_screen', []),
                 },
             )

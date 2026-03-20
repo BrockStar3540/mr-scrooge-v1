@@ -5,12 +5,6 @@
 # permission of Carl Brock.
 # ============================================================
 # ============================================================
-# Copyright (c) Carl Brock 2026. All rights reserved.
-# Use, reproduction, modification, or distribution of this
-# software is permitted only with the express written
-# permission of Carl Brock.
-# ============================================================
-# ============================================================
 # MR. SCROOGE — OANDA CLIENT
 # OANDA v20 REST API client.
 # Handles bar fetching (5M, 1H, D), live spreads, order placement,
@@ -342,6 +336,35 @@ class OANDAClient:
         except Exception as e:
             log.warning(f"Trade realized PnL fetch failed for {trade_id}: {e}")
             return None
+
+    def get_daily_realized_pl(self) -> float:
+        """Returns total realized P/L for today (since midnight UTC) from OANDA transactions."""
+        from datetime import datetime, timezone
+        try:
+            today = datetime.now(timezone.utc).strftime('%Y-%m-%dT00:00:00.000000000Z')
+            url = (f"{self.base_url}/v3/accounts/{self.account_id}/transactions"
+                   f"?from={today}&type=ORDER_FILL")
+            r = requests.get(url, headers=self.headers, timeout=10)
+            r.raise_for_status()
+            pages = r.json().get('pages', [])
+            total_pl = 0.0
+            for page_url in pages:
+                pr = requests.get(page_url, headers=self.headers, timeout=10)
+                pr.raise_for_status()
+                for tx in pr.json().get('transactions', []):
+                    pl = tx.get('pl', '0')
+                    total_pl += float(pl)
+            return round(total_pl, 2)
+        except Exception as e:
+            log.warning(f"Daily realized PL fetch failed: {e}")
+            return 0.0
+
+    def get_alltime_realized_pl(self) -> float:
+        """Returns all-time realized P/L from OANDA account summary."""
+        summary = self.get_account_summary()
+        if summary:
+            return round(float(summary.get('pl', 0)), 2)
+        return 0.0
 
     def get_combined_margin_pct(self) -> float:
         """

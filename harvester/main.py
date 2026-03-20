@@ -21,9 +21,9 @@
 # take effect on the next poll cycle — no restart needed.
 #
 #   Default tiers (equity %):
-#     T1: 1.5% → close 25%, SL → BE
-#     T2: 3.0% → close 25%, SL → +T1 pips
-#     T3: 4.5% → close 25%, SL → +T2 pips
+#     T1: 3.0% → close 25%, SL → BE
+#     T2: 5.0% → close 25%, SL → +T1 pips
+#     T3: 7.0% → close 25%, SL → +T2 pips
 #   Runner: remaining 25% rides to OANDA native TP2
 #
 # Polls OANDA every 30 seconds.
@@ -67,7 +67,7 @@ DEFAULT_CONFIG = {
     # Tier thresholds as % of equity.
     # threshold_pips = (equity × pct) / (pip_value_per_unit × original_units)
     # This keeps dollar profit per tier constant regardless of account size.
-    'tier_equity_pcts':    [0.015, 0.030, 0.045],  # T1=1.5%, T2=3.0%, T3=4.5%
+    'tier_equity_pcts':    [0.030, 0.050, 0.070],  # T1=3.0%, T2=5.0%, T3=7.0%
     'sl_lock_equity_pcts': [0.0,   0.015, 0.030],  # SL offset from entry per tier
     'close_pcts':          [0.25,  0.25,  0.25],   # fraction of original to close
 
@@ -213,7 +213,7 @@ def compute_tier_pips(
     pip_value_per_unit = oanda.get_pip_value_per_unit(instrument, mid)
     pip_dollar_value   = pip_value_per_unit * original_units
 
-    tier_equity_pcts    = cfg.get('tier_equity_pcts',    [0.015, 0.030, 0.045])
+    tier_equity_pcts    = cfg.get('tier_equity_pcts',    [0.030, 0.050, 0.070])
     sl_lock_equity_pcts = cfg.get('sl_lock_equity_pcts', [0.0,   0.015, 0.030])
 
     if pip_dollar_value > 0:
