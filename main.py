@@ -1295,10 +1295,15 @@ def main():
                 f'score={_best["signal"].score} | others: {_others}'
             )
             if ctx['position_count'] < CONFIG['max_concurrent_positions']:
-                try:
-                    _entry_event = _fire_entry_candidate(_best, ctx)
-                except Exception as _e:
-                    log.error(f'_fire_entry_candidate error: {_e}', exc_info=True)
+                # Try candidates in score order — if #1 goes stale, fall through to #2, etc.
+                for _cand in _candidates:
+                    try:
+                        _entry_event = _fire_entry_candidate(_cand, ctx)
+                        if _entry_event:
+                            break  # fired successfully — stop trying
+                    except Exception as _e:
+                        log.error(f'_fire_entry_candidate error: {_e}', exc_info=True)
+                        break
         else:
             ctx['_on_deck_symbol'] = None
             ctx['_on_deck_score']  = 0
