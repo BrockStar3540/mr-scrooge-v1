@@ -158,11 +158,6 @@ class SignalEngine:
         # Minimum SL distance — prevents fakeout stops on very tight reversal candles
         self.sl_floor_pct = config.get('sl_floor_pct', 0.0030)  # 0.30% default
 
-        # Fixed pip targets
-        self.sl_pips   = config.get('sl_pips',   10)   # pips beyond zone for stop
-        self.tp1_pips  = config.get('tp1_pips',  5)    # pips from entry for TP1 (ratchet trigger)
-        self.tp2_pips  = config.get('tp2_pips',  30)   # pips from entry for TP2 (full exit)
-
         # Zone proximity — how close to a magic line to be "at zone"
         self.zone_proximity_pct = config.get('zone_proximity_pct', 0.001)  # 0.1% — must be tight to zone
 
@@ -298,20 +293,11 @@ class SignalEngine:
                                   rejection_reasons, msg)
 
         # --- All gates passed — build entry signal ---
-        # Fixed pip structure: SL/TP1/TP2 measured from trigger price.
-        # Actual values get recalculated from fill price in _fire_entry_candidate.
-        _center  = zone_map.daily_box.center
-        _pip     = 0.01 if _center > 20 else 0.0001
-        if direction == 'long':
-            fixed_stop = pitchfork.trigger_price - self.sl_pips * _pip
-        else:
-            fixed_stop = pitchfork.trigger_price + self.sl_pips * _pip
-
         tp1, tp2 = self._calculate_targets(
             direction, pitchfork.trigger_price, zone_map
         )
 
-        risk_points = abs(pitchfork.trigger_price - fixed_stop)
+        risk_points = abs(pitchfork.trigger_price - pitchfork.stop_price)
         reward_points = abs(tp2 - pitchfork.trigger_price)
         rr = reward_points / risk_points if risk_points > 0 else 0
 
@@ -341,7 +327,7 @@ class SignalEngine:
             otr_ratio=otr_ratio,
             otr_category=otr_category,
             entry_price=pitchfork.trigger_price,
-            stop_price=fixed_stop,
+            stop_price=pitchfork.stop_price,
             tp1_price=tp1,
             tp2_price=tp2,
             risk_points=risk_points,
@@ -353,7 +339,6 @@ class SignalEngine:
         )
         _result.score = self._calculate_score(_result)
         return _result
-
 
     # ----------------------------------------------------------
     # SCORING: Opportunity quality score (0-100)
@@ -913,20 +898,25 @@ class SignalEngine:
                              direction: str,
                              entry_price: float,
                              zone_map: ZoneMap) -> Tuple[float, float]:
-        """Fixed pip targets from entry price.
-        TP1 = ratchet trigger (SL locks here when hit).
-        TP2 = full exit (OANDA native TP closes position).
-        Actual values are recalculated from fill price in _fire_entry_candidate.
-        """
-        _center  = zone_map.daily_box.center
-        pip_size = 0.01 if _center > 20 else 0.0001
+        daily_box = zone_map.daily_box
 
+        # TP1 = daily box midline, TP2 = opposite daily box wall
+        # Guard: if entry is near center, TP1 ≈ entry → DOA trade.
+        # In that case, push TP1 to midpoint between entry and opposite wall.
         if direction == 'long':
-            tp1 = entry_price + self.tp1_pips * pip_size
-            tp2 = entry_price + self.tp2_pips * pip_size
+            tp1 = daily_box.center
+            tp2 = daily_box.PDH
+            # Ensure TP1 is at least 50% of the way from entry to TP2
+            min_tp1 = entry_price + (tp2 - entry_price) * 0.50
+            if tp1 < min_tp1:
+                tp1 = min_tp1
         else:
-            tp1 = entry_price - self.tp1_pips * pip_size
-            tp2 = entry_price - self.tp2_pips * pip_size
+            tp1 = daily_box.center
+            tp2 = daily_box.PDL
+            # Ensure TP1 is at least 50% of the way from entry to TP2
+            max_tp1 = entry_price - (entry_price - tp2) * 0.50
+            if tp1 > max_tp1:
+                tp1 = max_tp1
 
         return tp1, tp2
 

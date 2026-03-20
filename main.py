@@ -98,9 +98,9 @@ CONFIG = {
     'max_eur_positions':        2,       # EUR exposure cap — EUR trending; max 2 EUR pairs open
     'max_daily_loss_pct':       0.075,   # 7.5% daily halt — allows 5 full stops at 1.5% risk before shutdown
     'min_risk_reward':          1.60,    # Reduced to increase qualified setups while keeping RR > 1.5 floor
-    'sl_pips':                  10,      # Fixed SL: 10 pips beyond zone (from fill)
-    'tp1_pips':                 10,      # Fixed TP1: ratchet trigger — at 50% (+5p) SL moves to BE, at TP1 SL locks to entry+10
-    'tp2_pips':                 30,      # Fixed TP2: full exit — OANDA native TP closes position
+    'sl_pips':                  10,      # Fixed SL: 10 pips from fill price
+    'tp1_pips':                 10,      # Fixed TP1: ratchet trigger
+    'tp2_pips':                 30,      # Fixed TP2: OANDA native TP closes position
 
     # Timing
     'scan_interval_seconds':    300,     # 5 minutes
@@ -785,7 +785,7 @@ def process_instrument(symbol: str, ctx: dict) -> Optional[dict]:
             return None
         decision_log.info(f'{symbol}: Re-entry approved — {reentry.reason}')
 
-    # RANKING: all gates passed — queue as candidate, fire best-scored after full scan
+    # RANKING: all gates passed -- queue as candidate, fire best-scored after full scan
     ctx.setdefault('_cycle_entry_candidates', []).append({
         'symbol':            symbol,
         'signal':            signal,
@@ -812,10 +812,10 @@ def _fire_entry_candidate(cand: dict, ctx: dict):
     open_wait_override = cand['open_wait_override']
     zone_map         = cand['zone_map']
 
-    # Mark zone as recently triggered (prevents duplicate entries for 20 min)
+    # Mark zone as recently triggered
     _pip_size_zc = 0.01 if 'JPY' in symbol else 0.0001
     _rounded_zc  = round(signal.entry_price / (_pip_size_zc * 5)) * (_pip_size_zc * 5)
-    _zone_key    = f"{symbol}_{_rounded_zc:.5f}_{signal.action}"
+    _zone_key    = f'{symbol}_{_rounded_zc:.5f}_{signal.action}'
     ctx.setdefault('zone_cache', {})[_zone_key] = datetime.now()
 
     oanda         = ctx['oanda']
@@ -824,7 +824,7 @@ def _fire_entry_candidate(cand: dict, ctx: dict):
     trade_manager = ctx['trade_manager']
     box_machine   = ctx['box_machine']
 
-    # Size the position — margin-utilization: deploy 80% of equity as margin.
+    # Size the position — margin-utilization: deploy ~50% of equity as margin.
     # Harvester handles profit extraction via staggered partials (8/18/30 pip tiers).
     equity      = oanda.get_equity() or ctx['equity_start']
     inst_meta   = oanda._instrument_cache.get(symbol, {})
@@ -837,25 +837,24 @@ def _fire_entry_candidate(cand: dict, ctx: dict):
     if risk_points <= 0:
         return None
 
-    # Margin-based sizing: use OANDA's actual marginRate (not hardcoded leverage).
-    # OANDA requires 5% margin (20:1) for JPY pairs but 2% (50:1) for others.
-    # base_price_usd: USD value of 1 unit of base currency (correct for JPY crosses too).
+    # Base units from margin target
+    # base_price_usd: USD value of 1 unit of base currency (correct for JPY crosses too)
     base_price_usd = pip_value * current_price / pip_size if pip_size > 0 else current_price
     target_margin  = equity * CONFIG['margin_utilization_pct']
     base_units     = target_margin / (base_price_usd * margin_rate) if base_price_usd > 0 else 0
 
-    # Size: deploy 80% equity at OANDA's actual margin rate — no decompressors
+    # No decompressors — full 80% margin every trade
     units = round(base_units)
 
     # Logging
-    eff_leverage = round(1.0 / margin_rate) if margin_rate > 0 else 0
     risk_pips  = risk_points / pip_size
     tp1_pips   = abs(signal.tp1_price - current_price) / pip_size
     pip_dollar = units * pip_value  # $ per pip on full position
     decision_log.info(
-        f'{symbol}: Margin {CONFIG["margin_utilization_pct"]*100:.0f}%/{eff_leverage}:1 — equity ${equity:.2f} | '
-        f'margin ${target_margin:.2f} | base_usd ${base_price_usd:.4f} | '
-        f'units {units:.0f} | ${pip_dollar:.2f}/pip | SL {risk_pips:.1f}p | TP1 {tp1_pips:.1f}p'
+        f'{symbol}: Margin-based sizing — equity ${equity:.2f} | '
+        f'margin target ${target_margin:.2f} ({CONFIG["margin_utilization_pct"]*100:.0f}%) | '
+        f'margin_rate {margin_rate:.2%} | units {units:.0f} | '
+        f'${pip_dollar:.2f}/pip | SL {risk_pips:.1f}p | TP1 {tp1_pips:.1f}p'
     )
 
     if units < 1:
@@ -898,31 +897,6 @@ def _fire_entry_candidate(cand: dict, ctx: dict):
         )
         return None
 
-    # RR sanity check at CURRENT price (not trigger price).
-    # Signal engine computes RR from trigger, but fill happens near current_price.
-    _actual_risk   = abs(current_price - signal.stop_price)
-    _actual_reward = abs(signal.tp2_price - current_price)
-    _actual_rr = _actual_reward / _actual_risk if _actual_risk > 0 else 0
-    if _actual_rr < CONFIG['min_risk_reward']:
-        decision_log.info(
-            f'{symbol}: RR at current price {_actual_rr:.2f} < min {CONFIG["min_risk_reward"]:.1f} '
-            f'(risk {_actual_risk/pip_size:.1f}p, reward {_actual_reward/pip_size:.1f}p) — skipping'
-        )
-        return None
-
-    # TP1 floor: ensure TP1 is at least 5 pips from current price (prevent DOA entries near center)
-    _min_tp1_dist = 5 * pip_size
-    if signal.action == 'ENTER_LONG':
-        _tp1_dist = signal.tp1_price - current_price
-        if _tp1_dist < _min_tp1_dist:
-            signal.tp1_price = current_price + _min_tp1_dist
-            decision_log.info(f'{symbol}: TP1 floor applied — pushed to {signal.tp1_price:.5f} (+5 pips)')
-    else:
-        _tp1_dist = current_price - signal.tp1_price
-        if _tp1_dist < _min_tp1_dist:
-            signal.tp1_price = current_price - _min_tp1_dist
-            decision_log.info(f'{symbol}: TP1 floor applied — pushed to {signal.tp1_price:.5f} (-5 pips)')
-
     direction  = 'BUY' if signal.action == 'ENTER_LONG' else 'SELL'
     trade_id   = f'scrooge_{symbol.lower().replace("_","")}{uuid.uuid4().hex[:8]}'
     signal_type = signal.pitchfork.signal_type if signal.pitchfork else 'unknown'
@@ -963,9 +937,8 @@ def _fire_entry_candidate(cand: dict, ctx: dict):
             actual_fill = signal.entry_price
 
         # Recalculate SL/TP from actual fill price (fixed pip structure).
-        # This corrects for slippage when fill differs from trigger.
         _sl_pips  = CONFIG.get('sl_pips',  10)
-        _tp1_pips = CONFIG.get('tp1_pips', 5)
+        _tp1_pips = CONFIG.get('tp1_pips', 10)
         _tp2_pips = CONFIG.get('tp2_pips', 30)
         if direction == 'BUY':
             _sl_fill  = round(actual_fill - _sl_pips  * pip_size, 5)
@@ -984,7 +957,7 @@ def _fire_entry_candidate(cand: dict, ctx: dict):
             oanda.modify_trade_stop(_oanda_tid, _sl_fill)
             oanda.modify_trade_tp(_oanda_tid, _tp2_fill)
             decision_log.info(
-                f'{symbol}: Fill-anchored — fill {actual_fill:.5f} | '
+                f'{symbol}: Fill-anchored -- fill {actual_fill:.5f} | '
                 f'SL {_sl_fill:.5f} ({_sl_pips}p) | '
                 f'TP1 {_tp1_fill:.5f} ({_tp1_pips}p) | '
                 f'TP2 {_tp2_fill:.5f} ({_tp2_pips}p)'
@@ -1000,16 +973,15 @@ def _fire_entry_candidate(cand: dict, ctx: dict):
             actual_fill_price=actual_fill,
             overhead_cost=overhead_cost_usd,
             atr=zone_map.daily_box.ATR,
-            oanda_trade_id=_oanda_tid
+            oanda_trade_id=result.get('oanda_trade_id', '')
         )
         # Re-entry counter — must be incremented here (on actual fill) not on approval
         if pending_reentry:
             trade_manager.record_reentry(symbol)
         trade_log.info(
             f'ENTRY {trade_id} | {symbol} {direction} {units:.0f} units '
-            f'@ {actual_fill:.5f} | SL: {_sl_fill:.5f} ({_sl_pips}p) | '
-            f'TP1: {_tp1_fill:.5f} ({_tp1_pips}p) | TP2: {_tp2_fill:.5f} ({_tp2_pips}p) | '
-            f'Signal: {signal_type}'
+            f'@ {actual_fill:.5f} | SL: {signal.stop_price:.5f} | '
+            f'TP1: {signal.tp1_price:.5f} | Signal: {signal_type}'
         )
         return {
             'type': 'ENTRY',
@@ -1277,7 +1249,6 @@ def main():
             _others = ', '.join(
                 f'{c["symbol"]}={c["signal"].score}' for c in _candidates[1:]
             ) or 'none'
-            # Always mark on_deck so dashboard shows the best setup regardless of position count
             ctx['_on_deck_symbol'] = _best['symbol']
             ctx['_on_deck_score']  = _best['signal'].score
             decision_log.info(
@@ -1285,12 +1256,11 @@ def main():
                 f'score={_best["signal"].score} | others: {_others}'
             )
             if ctx['position_count'] < CONFIG['max_concurrent_positions']:
-                # Try candidates in score order — if #1 goes stale, fall through to #2, etc.
                 for _cand in _candidates:
                     try:
                         _entry_event = _fire_entry_candidate(_cand, ctx)
                         if _entry_event:
-                            break  # fired successfully — stop trying
+                            break
                     except Exception as _e:
                         log.error(f'_fire_entry_candidate error: {_e}', exc_info=True)
                         break
@@ -1331,9 +1301,9 @@ def main():
                         'breach_direction': _bs.breach_direction,
                         'breach_candles': _bs.breach_candles_confirmed,
                         'using_alternative': _bs.using_alternative,
+                        'gates_required': _bs.confirmation_gates_required,
                         'signal_score': ctx.get('_last_signal_scores', {}).get(_sym, 0),
                         'on_deck': ctx.get('_on_deck_symbol') == _sym,
-                        'gates_required': _bs.confirmation_gates_required,
                     }
             _eq = ctx['oanda'].get_equity() or ctx['equity_start']
             write_status(
