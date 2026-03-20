@@ -829,7 +829,7 @@ let _harvesterCfg = null;
 
 async function fetchHarvesterConfig() {
   try {
-    const r = await fetch(API + '/api/harvester-config', {headers: authHeaders()});
+    const r = await fetch(API + '/api/harvester-config', {});
     _harvesterCfg = await r.json();
     renderHarvesterConfig(_harvesterCfg);
   } catch(e) {
@@ -1024,7 +1024,7 @@ async function setTimeframe(tf) {
     _updateTfButtons(tf);
     const r = await fetch(API + '/api/timeframe', {
       method: 'POST',
-      headers: {...authHeaders(), 'Content-Type': 'application/json'},
+      headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({timeframe: tf})
     });
     const d = await r.json();
