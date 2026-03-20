@@ -1,10 +1,4 @@
 #!/usr/bin/env python3
-#!/usr/bin/env python3
-# ============================================================
-# Copyright (c) Carl Brock 2026. All rights reserved.
-# Use, reproduction, modification, or distribution of this
-# software is permitted only with the express written
-# permission of Carl Brock.
 # ============================================================
 # Copyright (c) Carl Brock 2026. All rights reserved.
 # Use, reproduction, modification, or distribution of this
@@ -95,23 +89,27 @@ trade_log.addHandler(trade_handler)
 
 CONFIG = {
     # Risk — bigger conviction, fewer trades
+    'max_trade_risk_pct':      0.015,    # kept for daily-loss reference; sizing is now margin-based
     'margin_utilization_pct':  0.80,     # deploy 80% of equity as margin per trade
+    'target_profit_pct':       0.0025,   # 0.25% of equity per trade — profit-anchored sizing target
+    'tp1_allocation_pct':      0.40,     # 40% of position closes at TP1 — sizing anchors to this partial
+    'green_exit_min_pct':      0.00125,  # 50% of target (0.125%) — equity % required to trigger green exit
     'max_concurrent_positions': 1,       # 1 max — concentrate capital in best setup
-    'box_timeframe':    '30m',            # 'daily' (default) or '30m' (rolling window experiment)
-    'box_30m_lookback': 24,               # 30m bars in window when box_timeframe='30m' (24 = 12 hours ≈ daily range)
-    'high_volatility_atr_mult': 99,       # disabled in 30m mode — forces 5m bar patterns (hourly candle SL too wide for 30m box)
     'max_eur_positions':        2,       # EUR exposure cap — EUR trending; max 2 EUR pairs open
     'max_daily_loss_pct':       0.075,   # 7.5% daily halt — allows 5 full stops at 1.5% risk before shutdown
     'min_risk_reward':          1.60,    # Reduced to increase qualified setups while keeping RR > 1.5 floor
-    'sl_pips':                  10,      # Fixed SL: 10 pips beyond zone entry
-    'tp1_pips':                 5,       # Fixed TP1: 5 pips from entry — harvester secures 5 pips
-    'tp2_pips':                 30,      # Fixed TP2: 40 pips from entry (full exit)
+    'sl_pips':                  10,      # Fixed SL: 10 pips beyond zone (from fill)
+    'tp1_pips':                 5,       # Fixed TP1: ratchet trigger — SL locks to entry+5 when hit
+    'tp2_pips':                 30,      # Fixed TP2: full exit — OANDA native TP closes position
 
     # Timing
     'scan_interval_seconds':    300,     # 5 minutes
     'rescan_interval_minutes':  30,      # Universe rescan
     'open_wait_minutes':        15,      # Wait after market open
     'max_hold_minutes':         360,     # 6 hours (raised from 180 — forex trends need time to develop)
+    'hourly_green_exit_enabled': True,   # Close net-green positions every cycle to recycle capital
+    'hourly_green_exit_minutes': 60,     # Check once per hour (was 5 — too noisy, violated 1H management rule)
+    'hourly_green_exit_min_pnl': 0.002,  # 0.2% net profit required (was 0.0 — fired on trivial moves)
 
     # Stop loss floor — minimum SL distance to prevent fakeout stops
     'sl_floor_pct':             0.0050,  # 0.50% min SL distance from entry (raised from 0.30% — too tight)
@@ -144,42 +142,17 @@ CONFIG = {
 
     # Universe — no instrument cap; risk ceiling is max_concurrent_positions + max_trade_risk_pct
     'instrument_tiers':        ['majors'],
-    'universe_mode':           'standard',  # balanced | standard | aggressive
+    'universe_mode':           'balanced',  # balanced | standard | aggressive
     'apply_probation_size':    True,
+    'probation_size_multiplier': 0.65,      # 65% size for probation pairs
 }
 
 # ============================================================
-# ── Runtime config.json overrides (written by dashboard toggle) ──────────────
-def _apply_config_overrides():
-    _path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'config.json')
-    if os.path.exists(_path):
-        try:
-            with open(_path) as _f:
-                _ov = json.load(_f)
-            for k, v in _ov.get('globals', {}).items():
-                CONFIG[k] = v
-        except Exception:
-            pass
-_apply_config_overrides()
-
 # SHUTDOWN HANDLER
 # ============================================================
 
 _running = True
 _INSTANCE_LOCK_FH = None
-
-def _fetch_box_bars(oanda, symbol):
-    """Return (daily_bars, hourly_bars, bars_30m) based on box_timeframe config."""
-    use_30m  = CONFIG.get('box_timeframe') == '30m'
-    lookback = CONFIG.get('box_30m_lookback', 8)
-    hourly_bars = oanda.get_hourly_bars(symbol, count=200)
-    daily_bars  = oanda.get_daily_bars(symbol, count=20)
-    if use_30m:
-        bars_30m = oanda.get_30m_bars(symbol, count=lookback + 20)
-    else:
-        bars_30m = None
-    return daily_bars, hourly_bars, bars_30m
-
 
 def _acquire_instance_lock_or_exit():
     """Ensure only one Mr. Scrooge process can run in this working directory."""
@@ -300,7 +273,8 @@ def _update_sessions(ctx: dict, now: datetime) -> bool:
     box_machine   = ctx['box_machine']
     for symbol in new_instruments:
         if symbol not in box_machine.states:
-            daily_bars, hourly_bars, bars_30m = _fetch_box_bars(oanda, symbol)
+            daily_bars  = oanda.get_daily_bars(symbol)
+            hourly_bars = oanda.get_hourly_bars(symbol, count=200)
             if daily_bars is None or len(daily_bars) < 3:
                 continue
             prices     = oanda.get_prices([symbol])
@@ -313,7 +287,7 @@ def _update_sessions(ctx: dict, now: datetime) -> bool:
             zone_map = zone_detector.build_zone_map(
                 symbol, 'forex', daily_bars,
                 hourly_bars if hourly_bars is not None else daily_bars,
-                current_price, bars_30m=bars_30m
+                current_price
             )
             if zone_map:
                 box_machine.initialize_instrument(symbol, zone_map.daily_box, spread)
@@ -419,7 +393,8 @@ def boot():
 
     # Initialize box state machine for each instrument
     for symbol in active_instruments:
-        daily_bars, hourly_bars, bars_30m = _fetch_box_bars(oanda, symbol)
+        daily_bars  = oanda.get_daily_bars(symbol)
+        hourly_bars = oanda.get_hourly_bars(symbol, count=200)
         if daily_bars is None or len(daily_bars) < 3:
             log.warning(f'{symbol}: insufficient daily bars — skipping box init')
             continue
@@ -433,7 +408,7 @@ def boot():
         zone_map = zone_detector.build_zone_map(
             symbol, 'forex', daily_bars,
             hourly_bars if hourly_bars is not None else daily_bars,
-            current_price, bars_30m=bars_30m
+            current_price
         )
         if zone_map:
             box_machine.initialize_instrument(symbol, zone_map.daily_box, spread)
@@ -487,7 +462,8 @@ def daily_reset(ctx: dict):
     zone_detector = ctx['zone_detector']
     box_machine   = ctx['box_machine']
     for symbol in ctx['active_instruments']:
-        daily_bars, hourly_bars, bars_30m = _fetch_box_bars(oanda, symbol)
+        daily_bars  = oanda.get_daily_bars(symbol)
+        hourly_bars = oanda.get_hourly_bars(symbol, count=200)
         if daily_bars is None or len(daily_bars) < 3:
             continue
         prices     = oanda.get_prices([symbol])
@@ -500,7 +476,7 @@ def daily_reset(ctx: dict):
         zone_map = zone_detector.build_zone_map(
             symbol, 'forex', daily_bars,
             hourly_bars if hourly_bars is not None else daily_bars,
-            current_price, bars_30m=bars_30m
+            current_price
         )
         if zone_map:
             box_machine.initialize_instrument(symbol, zone_map.daily_box, spread)
@@ -536,13 +512,14 @@ def process_instrument(symbol: str, ctx: dict) -> Optional[dict]:
 
     # Fetch bars (single retry on failure)
     bars_5m = oanda.get_5m_bars(symbol, count=300)   # 25h window — ATR gate needs full session range
-    bars_d, bars_1h, bars_30m = _fetch_box_bars(oanda, symbol)
+    bars_1h = oanda.get_hourly_bars(symbol, count=200) # 8+ trading days — covers key weekly levels
+    bars_d  = oanda.get_daily_bars(symbol, count=20)
 
     if bars_5m is None or bars_1h is None or bars_d is None:
         time.sleep(2)
         if bars_5m is None: bars_5m = oanda.get_5m_bars(symbol, count=300)
-        if bars_d is None or bars_1h is None:
-            bars_d, bars_1h, bars_30m = _fetch_box_bars(oanda, symbol)
+        if bars_1h is None: bars_1h = oanda.get_hourly_bars(symbol, count=200)
+        if bars_d  is None: bars_d  = oanda.get_daily_bars(symbol, count=20)
         if bars_5m is None or bars_1h is None or bars_d is None:
             log.warning(f'{symbol}: bar fetch failed after retry — skipping')
             return None
@@ -560,20 +537,10 @@ def process_instrument(symbol: str, ctx: dict) -> Optional[dict]:
         return None
 
     # Build zone map (also gives us the daily_box for the box machine)
-    zone_map = zone_detector.build_zone_map(symbol, 'forex', bars_d, bars_1h, current_price, bars_30m=bars_30m)
+    zone_map = zone_detector.build_zone_map(symbol, 'forex', bars_d, bars_1h, current_price)
     if zone_map is None:
         log.warning(f'{symbol}: zone map failed — skipping')
         return None
-
-    # In 30m mode — refresh box state machine when the box shifts (no open trade)
-    if CONFIG.get('box_timeframe') == '30m' and symbol in box_machine.states:
-        cur = box_machine.states[symbol]
-        cur_PDH, cur_PDL = cur.active_box.PDH, cur.active_box.PDL
-        new_PDH, new_PDL = zone_map.daily_box.PDH, zone_map.daily_box.PDL
-        shift = max(abs(new_PDH - cur_PDH) / cur_PDH, abs(new_PDL - cur_PDL) / cur_PDL) if cur_PDH > 0 else 1.0
-        if shift > 0.001 and cur.state.value != 'BOX_BREACH_PENDING':
-            box_machine.initialize_instrument(symbol, zone_map.daily_box, live_spread or 0.0002)
-            log.info(f'{symbol}: 30m box refreshed (shift={shift*100:.3f}%)')
 
     half_box = zone_map.daily_box.half_box
 
@@ -779,8 +746,6 @@ def process_instrument(symbol: str, ctx: dict) -> Optional[dict]:
     if not signal.all_gates_passed or signal.action not in ('ENTER_LONG', 'ENTER_SHORT'):
         ctx.get('pending_reentry', {}).pop(symbol, None)
         return None
-    # at_max_positions: still store as candidate so dashboard shows ON DECK correctly.
-    # Firing is gated in the post-loop ranking step.
 
     # Zone debounce — prevent same zone from re-firing within 20 min (4 candles)
     # Round entry price to nearest 5 pips so micro-drift doesn't generate phantom new zone keys
@@ -809,7 +774,7 @@ def process_instrument(symbol: str, ctx: dict) -> Optional[dict]:
             ctx.get('pending_reentry', {}).pop(symbol, None)
             return None
         open_wait_override = True
-        decision_log.info(f'{symbol}: Open wait OVERRIDE — Tier 1 + 80%+ ATR + {signal.pitchfork.signal_type}')
+        decision_log.info(f'{symbol}: Open wait OVERRIDE — Tier 1 + 80%+ ATR + {signal.pitchfork.signal_type}, 50% size')
 
     # Validate pending re-entry if present
     if pending_reentry:
@@ -857,8 +822,9 @@ def _fire_entry_candidate(cand: dict, ctx: dict):
     router        = ctx['router']
     fee_calc      = ctx['fee_calc']
     trade_manager = ctx['trade_manager']
+    box_machine   = ctx['box_machine']
 
-    # Size the position — margin-utilization: deploy ~50% of equity as margin.
+    # Size the position — margin-utilization: deploy 80% of equity as margin.
     # Harvester handles profit extraction via staggered partials (8/18/30 pip tiers).
     equity      = oanda.get_equity() or ctx['equity_start']
     inst_meta   = oanda._instrument_cache.get(symbol, {})
@@ -872,27 +838,24 @@ def _fire_entry_candidate(cand: dict, ctx: dict):
         return None
 
     # Margin-based sizing: use OANDA's actual marginRate (not hardcoded leverage).
-    # OANDA requires 5% margin (20:1) for JPY pairs but 2% (50:1) for others —
-    # using the hardcoded CONFIG leverage would oversize and then the margin cap
-    # would kill the trade. Use OANDA's real rate so sizing and cap agree.
+    # OANDA requires 5% margin (20:1) for JPY pairs but 2% (50:1) for others.
     # base_price_usd: USD value of 1 unit of base currency (correct for JPY crosses too).
     base_price_usd = pip_value * current_price / pip_size if pip_size > 0 else current_price
     target_margin  = equity * CONFIG['margin_utilization_pct']
     base_units     = target_margin / (base_price_usd * margin_rate) if base_price_usd > 0 else 0
 
-    # Size: deploy 80% equity at OANDA's actual margin rate — no decompressors, no off-peak cuts
+    # Size: deploy 80% equity at OANDA's actual margin rate — no decompressors
     units = round(base_units)
 
     # Logging
+    eff_leverage = round(1.0 / margin_rate) if margin_rate > 0 else 0
     risk_pips  = risk_points / pip_size
     tp1_pips   = abs(signal.tp1_price - current_price) / pip_size
     pip_dollar = units * pip_value  # $ per pip on full position
-    eff_leverage = round(1.0 / margin_rate)
     decision_log.info(
-        f'{symbol}: Margin 80%/{eff_leverage}:1 -- equity ${equity:.2f} | '
+        f'{symbol}: Margin {CONFIG["margin_utilization_pct"]*100:.0f}%/{eff_leverage}:1 — equity ${equity:.2f} | '
         f'margin ${target_margin:.2f} | base_usd ${base_price_usd:.4f} | '
-        f'units {units:.0f} | ${pip_dollar:.2f}/pip | '
-        f'SL {risk_pips:.1f}p | TP1 {tp1_pips:.1f}p'
+        f'units {units:.0f} | ${pip_dollar:.2f}/pip | SL {risk_pips:.1f}p | TP1 {tp1_pips:.1f}p'
     )
 
     if units < 1:
@@ -901,10 +864,11 @@ def _fire_entry_candidate(cand: dict, ctx: dict):
 
     # Cap units to free margin — prevent INSUFFICIENT_MARGIN rejections
     # Leave a 20% buffer so existing trades aren't squeezed on spread moves
+    margin_rate  = float(inst_meta.get('marginRate', 0.02))
     free_margin  = oanda.get_free_margin()
     if free_margin is not None:
         usable_margin    = free_margin * 0.80
-        max_units_margin = round(usable_margin / (base_price_usd * margin_rate))
+        max_units_margin = round(usable_margin / (base_price_usd * margin_rate)) if base_price_usd > 0 else 0
         if max_units_margin < 1:
             log.warning(f'{symbol}: Insufficient free margin (${free_margin:.2f}) — skipping')
             return None
@@ -933,6 +897,31 @@ def _fire_entry_candidate(cand: dict, ctx: dict):
             f'{symbol}: Signal stale — price {current_price:.5f} at/below long stop {signal.stop_price:.5f}'
         )
         return None
+
+    # RR sanity check at CURRENT price (not trigger price).
+    # Signal engine computes RR from trigger, but fill happens near current_price.
+    _actual_risk   = abs(current_price - signal.stop_price)
+    _actual_reward = abs(signal.tp2_price - current_price)
+    _actual_rr = _actual_reward / _actual_risk if _actual_risk > 0 else 0
+    if _actual_rr < CONFIG['min_risk_reward']:
+        decision_log.info(
+            f'{symbol}: RR at current price {_actual_rr:.2f} < min {CONFIG["min_risk_reward"]:.1f} '
+            f'(risk {_actual_risk/pip_size:.1f}p, reward {_actual_reward/pip_size:.1f}p) — skipping'
+        )
+        return None
+
+    # TP1 floor: ensure TP1 is at least 5 pips from current price (prevent DOA entries near center)
+    _min_tp1_dist = 5 * pip_size
+    if signal.action == 'ENTER_LONG':
+        _tp1_dist = signal.tp1_price - current_price
+        if _tp1_dist < _min_tp1_dist:
+            signal.tp1_price = current_price + _min_tp1_dist
+            decision_log.info(f'{symbol}: TP1 floor applied — pushed to {signal.tp1_price:.5f} (+5 pips)')
+    else:
+        _tp1_dist = current_price - signal.tp1_price
+        if _tp1_dist < _min_tp1_dist:
+            signal.tp1_price = current_price - _min_tp1_dist
+            decision_log.info(f'{symbol}: TP1 floor applied — pushed to {signal.tp1_price:.5f} (-5 pips)')
 
     direction  = 'BUY' if signal.action == 'ENTER_LONG' else 'SELL'
     trade_id   = f'scrooge_{symbol.lower().replace("_","")}{uuid.uuid4().hex[:8]}'
@@ -973,8 +962,8 @@ def _fire_entry_candidate(cand: dict, ctx: dict):
         if actual_fill <= 0:
             actual_fill = signal.entry_price
 
-        # Recalculate SL/TP from actual fill price (not zone trigger).
-        # This corrects for slippage when price has moved through the zone.
+        # Recalculate SL/TP from actual fill price (fixed pip structure).
+        # This corrects for slippage when fill differs from trigger.
         _sl_pips  = CONFIG.get('sl_pips',  10)
         _tp1_pips = CONFIG.get('tp1_pips', 5)
         _tp2_pips = CONFIG.get('tp2_pips', 30)
@@ -995,7 +984,7 @@ def _fire_entry_candidate(cand: dict, ctx: dict):
             oanda.modify_trade_stop(_oanda_tid, _sl_fill)
             oanda.modify_trade_tp(_oanda_tid, _tp2_fill)
             decision_log.info(
-                f'{symbol}: Fill-anchored -- fill {actual_fill:.5f} | '
+                f'{symbol}: Fill-anchored — fill {actual_fill:.5f} | '
                 f'SL {_sl_fill:.5f} ({_sl_pips}p) | '
                 f'TP1 {_tp1_fill:.5f} ({_tp1_pips}p) | '
                 f'TP2 {_tp2_fill:.5f} ({_tp2_pips}p)'
@@ -1011,15 +1000,16 @@ def _fire_entry_candidate(cand: dict, ctx: dict):
             actual_fill_price=actual_fill,
             overhead_cost=overhead_cost_usd,
             atr=zone_map.daily_box.ATR,
-            oanda_trade_id=result.get('oanda_trade_id', '')
+            oanda_trade_id=_oanda_tid
         )
         # Re-entry counter — must be incremented here (on actual fill) not on approval
         if pending_reentry:
             trade_manager.record_reentry(symbol)
         trade_log.info(
             f'ENTRY {trade_id} | {symbol} {direction} {units:.0f} units '
-            f'@ {actual_fill:.5f} | SL: {signal.stop_price:.5f} | '
-            f'TP1: {signal.tp1_price:.5f} | Signal: {signal_type}'
+            f'@ {actual_fill:.5f} | SL: {_sl_fill:.5f} ({_sl_pips}p) | '
+            f'TP1: {_tp1_fill:.5f} ({_tp1_pips}p) | TP2: {_tp2_fill:.5f} ({_tp2_pips}p) | '
+            f'Signal: {signal_type}'
         )
         return {
             'type': 'ENTRY',

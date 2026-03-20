@@ -535,6 +535,27 @@ class BoxStateMachine:
                     f"full position sizing restored"
                 )
 
+    def get_position_size_multiplier(self, symbol: str) -> float:
+        """
+        Returns position size multiplier based on box state.
+        Reduces size in new/unproven box.
+        """
+        if symbol not in self.states:
+            return 1.0
+        record = self.states[symbol]
+
+        if record.state == BoxState.NEW_BOX_STANDBY and not record.new_box_proven:
+            # Scale up as box proves itself
+            return 0.5 + (record.new_box_trades / self.new_box_proven_trades) * 0.5
+        elif record.age_confidence_pct < 70:
+            # Reduce size as box ages
+            return record.age_confidence_pct / 100
+        return 1.0
+
+    # ----------------------------------------------------------
+    # HELPERS
+    # ----------------------------------------------------------
+
     def _get_age_confidence(self, hours: float) -> float:
         """Interpolates confidence from age schedule."""
         hours_sorted = sorted(self.age_confidence.keys())
