@@ -746,12 +746,19 @@ async function fetchConfig() {
 function renderConfig() {
   const cfg = configData || {};
   const sections = {
-    'Risk Management': {
-      'Max Trade Risk': fmtPct(cfg.max_trade_risk_pct),
+    'Position Sizing': {
+      'Margin Utilization': fmtPct(cfg.margin_utilization_pct),
+      'Leverage': (cfg.leverage || 50) + ':1',
       'Max Positions': cfg.max_concurrent_positions,
+      'Max EUR Positions': cfg.max_eur_positions,
       'Max Daily Loss': fmtPct(cfg.max_daily_loss_pct),
+    },
+    'SL / TP (Fixed Pips)': {
+      'Stop Loss': (cfg.sl_pips || 10) + ' pips',
+      'TP1 — Ratchet Trigger': (cfg.tp1_pips || 5) + ' pips',
+      'TP2 — Full Exit': (cfg.tp2_pips || 30) + ' pips',
       'Min R:R': cfg.min_risk_reward,
-      'SL Floor': fmtPct(cfg.sl_floor_pct),
+      'Min Net Profit': (cfg.min_net_profit_pips || 7) + ' pips',
     },
     'Timing': {
       'Scan Interval': (cfg.scan_interval_seconds || 300) + 's',
@@ -759,32 +766,29 @@ function renderConfig() {
       'Open Wait': (cfg.open_wait_minutes || 15) + 'min',
       'Max Hold': (cfg.max_hold_minutes || 360) + 'min',
       'Limit Timeout': (cfg.limit_timeout_minutes || 5) + 'min',
-      'Time Exit Cooldown': (cfg.time_exit_cooldown_minutes || 360) + 'min',
+      'Time Exit Cooldown': (cfg.time_exit_cooldown_minutes || 15) + 'min',
     },
     'OTR Thresholds': {
       'Excellent': '<' + fmtPct(cfg.otr_excellent),
       'Acceptable': '<' + fmtPct(cfg.otr_acceptable),
       'Marginal': '<' + fmtPct(cfg.otr_marginal),
-      'Min Net Profit Pips': cfg.min_net_profit_pips,
+      'Min Efficiency': cfg.min_efficiency,
+      'Min Net Profit': (cfg.min_net_profit_pips || 7) + ' pips',
     },
     'Box & Zone': {
+      'Box Timeframe': cfg.box_timeframe || '30m',
+      '30M Lookback': (cfg.box_30m_lookback || 24) + ' bars',
       'Zone Proximity': fmtPct(cfg.zone_proximity_pct),
       'ATR Period': cfg.atr_period,
       'ATR High Confidence': fmtPct(cfg.atr_high_confidence_pct),
       'ATR Valid': fmtPct(cfg.atr_valid_pct),
       'ATR Minimum': fmtPct(cfg.atr_minimum_pct),
       'Max Spread/Half': fmtPct(cfg.max_spread_pct_of_half),
-      'Spread Spike Threshold': cfg.spread_spike_threshold + 'x',
-    },
-    'Hourly Green Exit': {
-      'Enabled': cfg.hourly_green_exit_enabled ? 'Yes' : 'No',
-      'Check Interval': (cfg.hourly_green_exit_minutes || 30) + 'min',
-      'Min PnL': '$' + (cfg.hourly_green_exit_min_pnl || 0),
+      'Spread Spike': (cfg.spread_spike_threshold || 4) + 'x',
     },
     'Universe': {
       'Mode': cfg.universe_mode,
       'Tiers': (cfg.instrument_tiers || []).join(', '),
-      'Probation Size': fmtPct(cfg.probation_size_multiplier),
     },
   };
 

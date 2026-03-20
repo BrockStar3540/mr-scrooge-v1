@@ -1,4 +1,11 @@
 #!/usr/bin/env python3
+#!/usr/bin/env python3
+# ============================================================
+# Copyright (c) Carl Brock 2026. All rights reserved.
+# Use, reproduction, modification, or distribution of this
+# software is permitted only with the express written
+# permission of Carl Brock.
+# ============================================================
 # ============================================================
 # Copyright (c) Carl Brock 2026. All rights reserved.
 # Use, reproduction, modification, or distribution of this
@@ -866,23 +873,25 @@ def _fire_entry_candidate(cand: dict, ctx: dict):
     if risk_points <= 0:
         return None
 
-    # Margin-based sizing: deploy 80% of equity at 50:1 leverage.
+    # Margin-based sizing: use OANDA's actual marginRate (not hardcoded leverage).
+    # OANDA requires 5% margin (20:1) for JPY pairs but 2% (50:1) for others —
+    # using the hardcoded CONFIG leverage would oversize and then the margin cap
+    # would kill the trade. Use OANDA's real rate so sizing and cap agree.
     # base_price_usd: USD value of 1 unit of base currency (correct for JPY crosses too).
-    _leverage      = CONFIG.get('leverage', 50)
-    _margin_rate   = 1.0 / _leverage
     base_price_usd = pip_value * current_price / pip_size if pip_size > 0 else current_price
     target_margin  = equity * CONFIG['margin_utilization_pct']
-    base_units     = target_margin / (base_price_usd * _margin_rate) if base_price_usd > 0 else 0
+    base_units     = target_margin / (base_price_usd * margin_rate) if base_price_usd > 0 else 0
 
-    # Size: 80% equity at 50:1 -- no decompressors, no off-peak cuts
+    # Size: deploy 80% equity at OANDA's actual margin rate — no decompressors, no off-peak cuts
     units = round(base_units)
 
     # Logging
     risk_pips  = risk_points / pip_size
     tp1_pips   = abs(signal.tp1_price - current_price) / pip_size
     pip_dollar = units * pip_value  # $ per pip on full position
+    eff_leverage = round(1.0 / margin_rate)
     decision_log.info(
-                f'{symbol}: Margin 80%/50:1 -- equity ${equity:.2f} | '
+        f'{symbol}: Margin 80%/{eff_leverage}:1 -- equity ${equity:.2f} | '
         f'margin ${target_margin:.2f} | base_usd ${base_price_usd:.4f} | '
         f'units {units:.0f} | ${pip_dollar:.2f}/pip | '
         f'SL {risk_pips:.1f}p | TP1 {tp1_pips:.1f}p'
@@ -894,11 +903,10 @@ def _fire_entry_candidate(cand: dict, ctx: dict):
 
     # Cap units to free margin — prevent INSUFFICIENT_MARGIN rejections
     # Leave a 20% buffer so existing trades aren't squeezed on spread moves
-    margin_rate  = float(inst_meta.get('marginRate', 0.02))
     free_margin  = oanda.get_free_margin()
     if free_margin is not None:
         usable_margin    = free_margin * 0.80
-        max_units_margin = round(usable_margin / (current_price * margin_rate))
+        max_units_margin = round(usable_margin / (base_price_usd * margin_rate))
         if max_units_margin < 1:
             log.warning(f'{symbol}: Insufficient free margin (${free_margin:.2f}) — skipping')
             return None
