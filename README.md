@@ -6,98 +6,68 @@ Mr. Scrooge is an automated forex trading bot that trades mean-reversion setups 
 
 ## Strategy Overview
 
-Each pair gets a "box" defined by the prior day's high (PDH) and prior day's low (PDL). The bot monitors for price entering a zone near one of those walls, waits for a pitchfork reversal signal, then enters with a fixed-pip stop just beyond the wall and a take-profit targeting the opposite side of the box.
+Each pair gets a "box" defined by the prior day's high (PDH) and prior day's low (PDL). The bot monitors for price entering a zone near one of those walls, waits for a pitchfork reversal signal, then enters with a fixed-pip stop and rides to a 30-pip take-profit.
 
 All setups must pass four gates before an entry is queued:
 - **Zone** — price within proximity % of PDH or PDL
 - **ATR** — session has sufficient momentum (not dead market)
-- **Pitchfork** — 3–5 directional candles followed by a reversal candle
+- **Pitchfork** — 3-5 directional candles followed by a reversal candle (John Wick, Power of Towers, or standard pitchfork)
 - **OTR** — spread cost is acceptable relative to box size
 
-When multiple symbols qualify simultaneously, an opportunity scoring system (0–100 pts) ranks them and fires only the best setup each cycle.
-
----
-
-## Requirements
-
-- Python 3.10+
-- OANDA account (practice or live)
-- Recommended minimum account size: **$2,000 USD**
-
-### Python packages
-```
-requests
-pandas
-python-dotenv
-```
-
----
-
-## Installation
-
-```bash
-git clone <repo-url> mr-scrooge
-cd mr-scrooge
-pip install -r requirements.txt
-cp .env.example .env
-# Edit .env with OANDA_API_KEY, OANDA_ACCOUNT_ID, OANDA_BASE_URL
-```
-
----
-
-## Running
-
-```bash
-# Direct
-./start.sh
-
-# As a systemd user service (recommended — survives reboots, auto-restarts)
-systemctl --user start mr-scrooge.service
-systemctl --user status mr-scrooge.service
-```
-
-Logs:
-```
-logs/mrscrooge.log    — main runtime log
-logs/decisions.log    — entry/exit decision log (gate results, rankings)
-logs/trades.log       — fill log
-```
+When multiple symbols qualify simultaneously, an opportunity scoring system (0-100 pts) ranks them and fires only the best setup each cycle.
 
 ---
 
 ## Architecture
 
-| File | Description |
-|------|-------------|
-| `main.py` | Boot, main loop, daily reset, `_fire_entry_candidate()` |
+| File | Purpose |
+|------|---------|
+| `main.py` | Boot, main 5-min loop, daily reset, entry candidate ranking |
 | `core/oanda_client.py` | OANDA v20 REST wrapper (quotes, orders, account) |
 | `core/execution_router.py` | Order routing — limit entry, market fallback |
 | `core/fee_calculator.py` | Spread-adjusted net profit calculations |
-| `strategy/zone_detector.py` | PDH/PDL computation, zone proximity classification |
-| `strategy/box_state_machine.py` | Per-pair breach/reversal state machine |
-| `strategy/signal_engine.py` | Pitchfork signal detection + opportunity scoring |
-| `strategy/universe_screener.py` | Session-aware pair selection |
-| `portfolio/trade_manager.py` | Position tracking, ratchet stop management, P&L |
-| `dashboard.py` | Web dashboard backend (stdlib only, no Flask) |
-| `dashboard.html` | Dashboard UI — positions, scanner, config, logs |
+| `strategy/zone_detector.py` | PDH/PDL box computation, percentile filter, gap detection, zone classification |
+| `strategy/box_state_machine.py` | Per-pair box state: ranging / breach pending / broken / new box / shelved |
+| `strategy/signal_engine.py` | 4-gate signal evaluation + pitchfork detection + opportunity scoring |
+| `strategy/universe_screener.py` | Session-aware pair selection (London, New York, Tokyo, Sydney) |
+| `portfolio/trade_manager.py` | Position tracking, ratchet stop management, harvester, P&L |
+| `harvester/` | Profit extraction daemon (staggered partials, trailing stops) |
+| `dashboard.py` | Web dashboard backend (stdlib HTTP server, no Flask) |
+| `dashboard.html` | Dashboard UI — positions, scanner, box states, config, logs |
 | `status.py` | Writes `data/status.json` for external monitoring |
+
+---
+
+## Signal Flow (per 5-min cycle)
+
+```
+For each active instrument:
+  1. Update box state machine (breach detection, age confidence)
+  2. Manage open positions (harvester ratchet, time exits, green exits)
+  3. Evaluate signal (4 gates: zone → ATR → pitchfork → OTR)
+  4. If all gates pass → queue as entry candidate with score
+
+After all instruments scanned:
+  5. Sort candidates by score (descending)
+  6. Fire best candidate if position count < max
+  7. Fall through to next if top pick goes stale
+  8. Write dashboard status
+```
 
 ---
 
 ## Position Sizing
 
-Sizing is **margin-based** — it uses OANDA's actual per-instrument margin rate, not a hardcoded leverage value.
+Sizing is **margin-based** using OANDA's actual per-instrument margin rate.
 
 ```
-target_margin = equity_balance × margin_utilization_pct   (80%)
-units         = target_margin / (base_price_usd × oanda_margin_rate)
+target_margin = equity_balance x 0.80
+units         = target_margin / (base_price_usd x oanda_margin_rate)
 ```
 
-OANDA margin rates vary by instrument:
-- **JPY crosses** (USD/JPY, AUD/JPY, etc.): 5% margin = 20:1 leverage
-- **Other majors** (AUD/USD, NZD/USD, etc.): 3% margin = ~33:1 leverage
-
-`equity_balance` is the **cash balance** (not NAV) — position sizing does not fluctuate with unrealized P&L.
+- `equity_balance` = cash balance (not NAV — excludes unrealized P&L)
+- No decompressors — full 80% margin at all times
+- JPY pairs: 5% margin (20:1), CHF pairs: ~3% (33:1), EUR/GBP: 2% (50:1)
 
 ---
 
@@ -108,66 +78,80 @@ All SL/TP values are measured from the actual fill price.
 | Level | Pips | Purpose |
 |-------|------|---------|
 | Stop Loss | 10 | Beyond the zone wall |
-| TP1 — Ratchet Trigger | 5 | SL locks to entry+5 when hit |
+| TP1 — Ratchet Trigger | 10 | SL management trigger |
 | TP2 — Full Exit | 30 | OANDA native TP closes position |
 
 **Ratchet stages:**
-1. At +2.5 pips (50% to TP1): SL advances to break-even
-2. At +5 pips (TP1 hit): SL locks to entry+5, position rides to TP2
-3. Above TP1: hybrid trailing stop (80% profit lock, hourly candle trail, 1.5×ATR)
+1. At **+5 pips** (50% to TP1): SL advances to break-even
+2. At **+10 pips** (TP1 hit): SL locks to entry+10, position rides to TP2
+3. Above TP1: hybrid trailing stop (80% profit lock, hourly candle trail, 1.5x ATR)
+4. At **+30 pips** (TP2): OANDA native TP closes full position
+
+After fill, the bot recalculates SL/TP from the actual fill price and updates the OANDA orders. This corrects for any slippage between the signal's trigger price and the market fill.
 
 ---
 
-## Opportunity Scoring (0–100 pts)
+## Box Construction
 
-When multiple symbols qualify in the same cycle, the best setup fires:
+The daily box is built from the prior trading day's hourly bars:
+1. Raw PDH/PDL extracted from prior-day high/low
+2. **Percentile filter** (98th/2nd percentile) trims single-bar spike wicks
+3. **Gap detection** adjusts box when today's open gaps above PDH or below PDL
+4. **Touch counting** validates the box walls have been tested
+
+The box is rebuilt at UTC midnight (daily reset) and when new instruments enter the universe.
+
+---
+
+## Opportunity Scoring (0-100 pts)
 
 | Factor | Points |
 |--------|--------|
 | Zone tier 1 / 2 / 3 / other | 30 / 20 / 10 / 5 |
 | ATR strength: strong / valid / weak | 20 / 15 / 5 |
 | OTR: excellent / acceptable / marginal | 15 / 10 / 5 |
-| R:R ≥3 / ≥2 / ≥1.5 | 15 / 10 / 5 |
-| Signal: john_wick / power_of_towers | 10 |
-| Signal: other pitchfork | 5 |
-| Pitchfork confidence HIGH / MODERATE | 5 / 3 |
-
-The highest-scoring symbol is shown as **ON DECK** on the dashboard (gold badge) even when the position limit is full.
-
----
-
-## Key Config Values (`main.py` → `CONFIG`)
-
-| Parameter | Value | Description |
-|-----------|-------|-------------|
-| `margin_utilization_pct` | 0.80 | Deploy 80% of equity balance as margin |
-| `max_concurrent_positions` | 1 | One position at a time |
-| `max_eur_positions` | 2 | EUR exposure cap |
-| `max_daily_loss_pct` | 0.075 | 7.5% daily halt |
-| `min_risk_reward` | 1.60 | Minimum RR to enter |
-| `sl_pips` | 10 | Fixed stop loss |
-| `tp1_pips` | 5 | Ratchet trigger |
-| `tp2_pips` | 30 | Full exit |
-| `scan_interval_seconds` | 300 | 5-minute cycle |
-| `max_hold_minutes` | 360 | 6-hour max hold |
-| `otr_marginal` | 0.25 | Max OTR — spread cannot exceed 25% of half-box |
-
-Runtime overrides are written to `config.json` by the dashboard (timeframe toggle, trading pause).
+| R:R >= 3.0 / >= 2.0 / >= 1.5 | 15 / 10 / 5 |
+| Named signal (john_wick / power_of_towers) | 10 |
+| Standard pitchfork | 5 |
+| Pitchfork confidence: HIGH / MODERATE | 5 / 3 |
 
 ---
 
 ## Dashboard
 
-Available at `http://localhost:8081` (requires `dashboard.py` to be running). Access is HTTP Basic Auth.
+Available at `http://localhost:8081` (HTTP Basic Auth). Tabs:
 
-Tabs: **Positions** · **Scanner** · **Signals** · **Box States** · **Config** · **Harvester** · **Logs**
-
-The Config tab reflects live values from `main.py` + any `config.json` overrides — no manual refresh needed.
+- **Positions** — live P&L, ratchet stage, time in trade
+- **Scanner** — all active pairs with box dimensions, OTR, spread
+- **Signals** — last cycle's gate results per pair
+- **Box States** — per-pair state machine status, ON DECK badge
+- **Config** — live CONFIG values + runtime overrides
+- **Harvester** — ratchet config, stagnant timeout settings
+- **Logs** — filterable real-time log viewer
 
 ---
 
 ## Deployment
 
-The bot runs as a `systemd --user` service on EC2 with `Restart=always`. It does not require OpenClaw or any other infrastructure — `start.sh` and `main.py` are self-contained.
+Runs as a `systemd --user` service on EC2 with `Restart=always` (auto-restarts on crash, 15s delay).
 
-Access the dashboard remotely via Tailscale (dashboard binds to `127.0.0.1` only).
+```bash
+systemctl --user start mr-scrooge.service
+systemctl --user status mr-scrooge.service
+systemctl --user restart mr-scrooge.service
+```
+
+Dashboard accessible via Tailscale only (binds to 127.0.0.1, exposed via Tailscale Serve on port 8081).
+
+---
+
+## Lessons Learned
+
+1. **30-minute box experiment (2026-03-19)**: Rolling 12-hour box was too unstable — zones shifted constantly, entries lost alignment with daily structure. Reverted to daily PDH/PDL.
+2. **Fixed pip stops**: Zone-anchored stops placed inside the box caused premature stop-outs. Fixed pip stops from fill price give consistent risk regardless of box geometry.
+3. **Sizing formula**: `current_price * margin_rate` is wrong for cross pairs (CAD/JPY). Must use `base_price_usd * margin_rate` where base_price_usd is derived from pip_value.
+4. **Ratchet tuning**: With TP1 at 5 pips, the 50% breakeven trigger fired at +2.5 pips — too tight. Setting TP1 to 10 pips means breakeven triggers at +5 pips (the minimum target).
+5. **Fill-anchored recalculation**: Signal engine computes SL/TP from trigger price, but fills happen at market. Must recalculate from actual fill and update OANDA orders.
+6. **Decompressors vs simplicity**: Box-age multipliers, off-peak reductions, and open-wait half-sizing reduced position sizes unpredictably. Full 80% at OANDA's real margin rate is simpler and more capital-efficient.
+7. **NAV vs balance**: Using NAV for sizing means position size fluctuates with unrealized P&L — sizes up when winning, down when losing. Use cash balance instead.
+8. **Pycache**: Must clear `strategy/__pycache__/*.pyc` after editing `.py` files or changes don't take effect.

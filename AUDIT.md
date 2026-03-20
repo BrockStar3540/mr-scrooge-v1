@@ -195,3 +195,71 @@ Removed:
 - "Min Net Profit 7 pips" appeared in both SL/TP and OTR sections — removed from SL/TP.
 - `CONFIG['leverage']` key removed from `main.py` entirely (dead code).
 - Commit: `536a460`
+
+---
+
+## Change Log (2026-03-20, afternoon — Strategy Revert + Fixes)
+
+### Context
+The 30-minute box experiment (2026-03-19 evening through 2026-03-20 early morning) introduced 23 commits that fundamentally changed the strategy. The bot stopped making money. A full diff analysis between the profitable initial release (`1c99ae2`) and HEAD revealed 6 breaking changes.
+
+### What Was Reverted
+1. **30m rolling box** → restored **daily PDH/PDL** with percentile filter + gap detection
+2. **Fixed pip TPs from zone** → restored **box-relative TPs** in signal engine, then replaced with **fixed pip TPs from fill** (SL=10, TP1=10, TP2=30)
+3. **Zone-anchored entry/stop** → restored **candle-based pitchfork detection** with fixed 10-pip stop override
+4. **80% margin with no decompressors** → kept 80% margin, **removed all decompressors** (box-age, off-peak, open-wait multipliers)
+5. **Green exit removed** → **restored** hourly green exit
+6. **Volatility gate disabled** (`high_volatility_atr_mult = 99`) → restored to **2.0** (original profitable value)
+
+### What Was Kept From the 23 Commits
+- Opportunity scoring system (0-100 pts) on `SignalResult`
+- Ranked entry selection (best-scored candidate fires, fallthrough on stale)
+- `_fire_entry_candidate()` extraction as module-level function
+- ON DECK dashboard display (gold badge)
+- `signal_score` and `on_deck` fields in dashboard status
+- Dashboard improvements: timeframe toggle, stagnant timeout config, config tab cleanup, log filter fixes
+- All dead code removal from the code audit
+- `authHeaders()` console error fix in dashboard.html
+
+### New Fixes Applied During Revert
+**14. JPY margin sizing bug (carried forward from commit `6ecd754`)**
+- Original sizing formula `target_margin / (current_price * margin_rate)` was wrong for cross pairs.
+- For CAD/JPY at price 115.879 with 5% margin: `$1037 / (115.879 * 0.05)` = 179 units (should be ~17,900).
+- Fixed: `target_margin / (base_price_usd * margin_rate)` where `base_price_usd = pip_value * current_price / pip_size`.
+- Free margin cap also corrected to use `base_price_usd`.
+
+**15. RR sanity check at current price**
+- Signal engine computes RR from trigger price (near zone), but fill happens at market price (possibly drifted toward center).
+- Added RR check in `_fire_entry_candidate()` using `current_price` vs `signal.stop_price` and `signal.tp2_price`.
+- Blocks entries where actual RR at fill would be below `min_risk_reward`.
+
+**16. Fill-anchored SL/TP recalculation**
+- After OANDA fill, recalculates SL/TP from actual fill price using fixed pip values.
+- Calls `oanda.modify_trade_stop()` and `oanda.modify_trade_tp()` to update OANDA orders.
+- Prevents stops being based on the trigger price when fill slips.
+
+**17. TP1 changed from 5 to 10 pips**
+- With TP1=5 pips, the harvester's 50% ratchet moved SL to breakeven at +2.5 pips — too tight.
+- Normal retracement would stop the trade at breakeven before it could reach TP1.
+- NZD/USD trade proved this: entered, gained +2.7 pips, ratcheted to BE, stopped at BE for +$3.11 instead of the target ~$30.
+- Fix: TP1=10 pips. The 50% ratchet now triggers breakeven at +5 pips (minimum profit target).
+
+**18. Decompressors removed entirely**
+- `box_machine.get_position_size_multiplier()` was halving position size when box age > 4 hours.
+- Off-peak hours (outside 07-22 UTC) applied another 0.5x cut.
+- Combined: some trades were 0.25x intended size (75% reduction).
+- Removed both — sizing is now straight `80% equity / (base_price_usd * margin_rate)`.
+- `get_position_size_multiplier()` still exists in `box_state_machine.py` but is no longer called.
+
+### External Code Review Assessment
+A third-party review identified 3 "critical" issues. Evaluation:
+1. **ATR gate hardcoded `True`** — correctly identified, but was already `True` in the profitable version. Not a regression.
+2. **Fill-anchored SL/TP recalc** — correctly identified as problematic when it used fixed pips from zone. Now recalculates from fill (different approach, same concept).
+3. **Percentile filtering shrinking boxes** — was present in the original profitable version. Not a regression. Disabling it would be a new change.
+
+Score: 1 of 3 recommendations was actionable (#2). The other 2 would have introduced new regressions.
+
+### Commit References
+- `59e83b9` — Revert to profitable daily box strategy; add fixed pip SL/TP from fill
+- `2197f1d` — Fix: remove undefined authHeaders() calls from dashboard JS
+- `d48356d` — TP1 to 10 pips; restore 50% ratchet for 5-pip breakeven trigger
