@@ -1,4 +1,10 @@
 # ============================================================
+# Copyright (c) Carl Brock 2026. All rights reserved.
+# Use, reproduction, modification, or distribution of this
+# software is permitted only with the express written
+# permission of Carl Brock.
+# ============================================================
+# ============================================================
 # BOXBOT — ZONE DETECTOR
 # Identifies all liquidity zones across timeframes:
 #   - Daily PDH/PDL box
@@ -276,8 +282,8 @@ class ZoneDetector:
                 ATR_20pct=atr * 0.20,
                 session_date=session_date,
                 draw_time=bars_30m.index[-1].isoformat() if hasattr(bars_30m.index[-1], 'isoformat') else str(bars_30m.index[-1]),
-                pdh_touches=0,
-                pdl_touches=0,
+                pdh_touches=self._count_level_touches(PDH, window, 'high'),
+                pdl_touches=self._count_level_touches(PDL, window, 'low'),
                 percentile_filtered=False,
                 validated=True,
                 raw_PDH=PDH,
