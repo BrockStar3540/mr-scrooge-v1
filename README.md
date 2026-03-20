@@ -6,19 +6,23 @@ Mr. Scrooge is an automated forex trading bot that trades mean-reversion setups 
 
 ## Strategy Overview
 
-The core idea is simple: forex pairs tend to oscillate around the prior day's high and low rather than trend through them indefinitely. When price breaches the prior day's high or low and then stalls or reverses, that's the setup.
+Each pair gets a "box" defined by the prior day's high (PDH) and prior day's low (PDL). The bot monitors for price entering a zone near one of those walls, waits for a pitchfork reversal signal, then enters with a fixed-pip stop just beyond the wall and a take-profit targeting the opposite side of the box.
 
-Each pair gets a "box" defined by the prior day's high (PDH) and prior day's low (PDL). The bot monitors for price entering a zone near one of those walls, waits for a reversal signal, then enters with a stop just beyond the wall and a take-profit targeting the opposite side of the box.
+All setups must pass four gates before an entry is queued:
+- **Zone** — price within proximity % of PDH or PDL
+- **ATR** — session has sufficient momentum (not dead market)
+- **Pitchfork** — 3–5 directional candles followed by a reversal candle
+- **OTR** — spread cost is acceptable relative to box size
 
-In plain English: if today's EUR/USD pushes up through yesterday's high and then shows a reversal candle pattern, the bot sells short with the expectation it returns toward the middle of the box.
+When multiple symbols qualify simultaneously, an opportunity scoring system (0–100 pts) ranks them and fires only the best setup each cycle.
 
 ---
 
 ## Requirements
 
 - Python 3.10+
-- OANDA account (practice or live — see note below)
-- Minimum account size: **$2,000 USD**. Below this, the margin-based position sizing produces very small position sizes that may look like bot malfunctions. The bot will still function, but the economics become marginal.
+- OANDA account (practice or live)
+- Recommended minimum account size: **$2,000 USD**
 
 ### Python packages
 ```
@@ -35,231 +39,135 @@ python-dotenv
 git clone <repo-url> mr-scrooge
 cd mr-scrooge
 pip install -r requirements.txt
-```
-
----
-
-## Configuration
-
-Copy the example environment file and fill in your credentials:
-
-```bash
 cp .env.example .env
+# Edit .env with OANDA_API_KEY, OANDA_ACCOUNT_ID, OANDA_BASE_URL
 ```
-
-Edit `.env`:
-
-```
-OANDA_API_KEY=your_oanda_api_key_here
-OANDA_ACCOUNT_ID=your_oanda_account_id_here
-OANDA_BASE_URL=https://api-fxtrade.oanda.com/v3
-# Use https://api-fxpractice.oanda.com/v3 for practice accounts
-```
-
-To get your OANDA API key: log into your OANDA account → My Account → API Access → Generate Token.
-
-Your account ID is the numeric string shown in the top-right of the OANDA trade portal (format: `001-001-XXXXXXX-001`).
 
 ---
 
 ## Running
 
-### Direct
 ```bash
+# Direct
 ./start.sh
-```
 
-### As a systemd service (recommended for always-on deployment)
-```bash
-# Copy the service file to ~/.config/systemd/user/
+# As a systemd user service (recommended — survives reboots, auto-restarts)
 systemctl --user start mr-scrooge.service
 systemctl --user status mr-scrooge.service
 ```
 
-### Logs
+Logs:
 ```
-logs/mrscrooge.log   — main runtime log
-logs/decisions.log   — entry/exit decision log
-logs/trades.log      — trade fill log
+logs/mrscrooge.log    — main runtime log
+logs/decisions.log    — entry/exit decision log (gate results, rankings)
+logs/trades.log       — fill log
 ```
 
 ---
 
 ## Architecture
 
-| Component | Description |
-|-----------|-------------|
-| `main.py` | Boot sequence, main loop, daily reset, shutdown handling |
-| `core/oanda_client.py` | OANDA v20 REST API wrapper (quotes, orders, positions) |
-| `core/execution_router.py` | Order routing — limit entry, market fallback, partial close |
+| File | Description |
+|------|-------------|
+| `main.py` | Boot, main loop, daily reset, `_fire_entry_candidate()` |
+| `core/oanda_client.py` | OANDA v20 REST wrapper (quotes, orders, account) |
+| `core/execution_router.py` | Order routing — limit entry, market fallback |
 | `core/fee_calculator.py` | Spread-adjusted net profit calculations |
-| `strategy/zone_detector.py` | Pulls prior-day OHLC, computes PDH/PDL, classifies zone proximity |
-| `strategy/box_state_machine.py` | Per-pair state machine tracking box breach and reversal confirmation |
-| `strategy/signal_engine.py` | Candlestick reversal pattern detection |
-| `strategy/universe_screener.py` | Selects active pairs by session, ATR, and OTR gates |
-| `portfolio/trade_manager.py` | Open position tracking, TP1/TP2 management, daily P&L |
-| `dashboard.py` | Web dashboard backend (Flask) |
-| `dashboard.html` | Dashboard UI — live positions, recent trades, config view |
-| `status.py` | Structured status file writer (for Frank monitoring agent) |
+| `strategy/zone_detector.py` | PDH/PDL computation, zone proximity classification |
+| `strategy/box_state_machine.py` | Per-pair breach/reversal state machine |
+| `strategy/signal_engine.py` | Pitchfork signal detection + opportunity scoring |
+| `strategy/universe_screener.py` | Session-aware pair selection |
+| `portfolio/trade_manager.py` | Position tracking, ratchet stop management, P&L |
+| `dashboard.py` | Web dashboard backend (stdlib only, no Flask) |
+| `dashboard.html` | Dashboard UI — positions, scanner, config, logs |
+| `status.py` | Writes `data/status.json` for external monitoring |
 
 ---
 
-## Mr. Harvester
+## Position Sizing
 
-Mr. Scrooge runs alongside a companion process called **mr-harvester**, which handles staged profit extraction on open positions.
+Sizing is **margin-based** — it uses OANDA's actual per-instrument margin rate, not a hardcoded leverage value.
 
-Harvester tiers (calculated as equity % — self-adjusting as account grows):
-- **Tier 1** (1.5% equity gain, ~10 pips): close 25% of position, advance stop to break-even
-- **Tier 2** (3.0% equity gain, ~20 pips): close another 25%, advance stop to +Tier 1 level
-- **Tier 3** (4.5% equity gain, ~30 pips): close another 25%, advance stop to +Tier 2 level
-- **Runner**: remaining 25% rides to Scrooge's native TP2
+```
+target_margin = equity_balance × margin_utilization_pct   (80%)
+units         = target_margin / (base_price_usd × oanda_margin_rate)
+```
 
-Harvester polls OANDA every 30 seconds. State is persisted to disk — restarts do not double-harvest.
+OANDA margin rates vary by instrument:
+- **JPY crosses** (USD/JPY, AUD/JPY, etc.): 5% margin = 20:1 leverage
+- **Other majors** (AUD/USD, NZD/USD, etc.): 3% margin = ~33:1 leverage
 
-Per-pair pip overrides can be configured via the dashboard UI (stored in `harvester_config.json`).
+`equity_balance` is the **cash balance** (not NAV) — position sizing does not fluctuate with unrealized P&L.
+
+---
+
+## SL / TP — Fixed Pip Structure
+
+All SL/TP values are measured from the actual fill price.
+
+| Level | Pips | Purpose |
+|-------|------|---------|
+| Stop Loss | 10 | Beyond the zone wall |
+| TP1 — Ratchet Trigger | 5 | SL locks to entry+5 when hit |
+| TP2 — Full Exit | 30 | OANDA native TP closes position |
+
+**Ratchet stages:**
+1. At +2.5 pips (50% to TP1): SL advances to break-even
+2. At +5 pips (TP1 hit): SL locks to entry+5, position rides to TP2
+3. Above TP1: hybrid trailing stop (80% profit lock, hourly candle trail, 1.5×ATR)
+
+---
+
+## Opportunity Scoring (0–100 pts)
+
+When multiple symbols qualify in the same cycle, the best setup fires:
+
+| Factor | Points |
+|--------|--------|
+| Zone tier 1 / 2 / 3 / other | 30 / 20 / 10 / 5 |
+| ATR strength: strong / valid / weak | 20 / 15 / 5 |
+| OTR: excellent / acceptable / marginal | 15 / 10 / 5 |
+| R:R ≥3 / ≥2 / ≥1.5 | 15 / 10 / 5 |
+| Signal: john_wick / power_of_towers | 10 |
+| Signal: other pitchfork | 5 |
+| Pitchfork confidence HIGH / MODERATE | 5 / 3 |
+
+The highest-scoring symbol is shown as **ON DECK** on the dashboard (gold badge) even when the position limit is full.
+
+---
+
+## Key Config Values (`main.py` → `CONFIG`)
+
+| Parameter | Value | Description |
+|-----------|-------|-------------|
+| `margin_utilization_pct` | 0.80 | Deploy 80% of equity balance as margin |
+| `max_concurrent_positions` | 1 | One position at a time |
+| `max_eur_positions` | 2 | EUR exposure cap |
+| `max_daily_loss_pct` | 0.075 | 7.5% daily halt |
+| `min_risk_reward` | 1.60 | Minimum RR to enter |
+| `sl_pips` | 10 | Fixed stop loss |
+| `tp1_pips` | 5 | Ratchet trigger |
+| `tp2_pips` | 30 | Full exit |
+| `scan_interval_seconds` | 300 | 5-minute cycle |
+| `max_hold_minutes` | 360 | 6-hour max hold |
+| `otr_marginal` | 0.25 | Max OTR — spread cannot exceed 25% of half-box |
+
+Runtime overrides are written to `config.json` by the dashboard (timeframe toggle, trading pause).
 
 ---
 
 ## Dashboard
 
-The dashboard is available at `http://localhost:8081` once `dashboard.py` is running. It shows live positions, recent trades, log viewer with filters, and harvester configuration controls.
+Available at `http://localhost:8081` (requires `dashboard.py` to be running). Access is HTTP Basic Auth.
 
-Access requires HTTP Basic Auth. Set credentials in the dashboard config section of `main.py` or via environment variables.
+Tabs: **Positions** · **Scanner** · **Signals** · **Box States** · **Config** · **Harvester** · **Logs**
 
----
-
-## Key Config Values (in `main.py`)
-
-| Parameter | Value | Description |
-|-----------|-------|-------------|
-| `margin_utilization_pct` | 0.50 | Deploy 50% of equity as margin per trade |
-| `max_concurrent_positions` | 1 | One position at a time |
-| `max_daily_loss_pct` | 0.075 | 7.5% daily halt |
-| `min_risk_reward` | 1.60 | Minimum RR ratio to enter |
-| `scan_interval_seconds` | 300 | 5-minute cycle |
-| `max_hold_minutes` | 360 | 6-hour max hold |
+The Config tab reflects live values from `main.py` + any `config.json` overrides — no manual refresh needed.
 
 ---
 
-## Deployment — The Bot Must Run 24/7
+## Deployment
 
-Trading bots miss setups and can leave positions unmanaged if the host goes offline. **The machine running Mr. Scrooge must stay on continuously.** You have two options:
+The bot runs as a `systemd --user` service on EC2 with `Restart=always`. It does not require OpenClaw or any other infrastructure — `start.sh` and `main.py` are self-contained.
 
----
-
-### Option A — AWS EC2 (Recommended)
-
-A cloud server is the cleanest solution. It runs 24/7 with no dependency on your home internet or power.
-
-**Recommended instance:** `t3.small` or `t3.medium` (Ubuntu 22.04 LTS). Costs roughly $15–30/month.
-
-**Setup steps:**
-
-```bash
-# 1. Launch an EC2 instance (Ubuntu 22.04) from the AWS console.
-#    Open port 22 (SSH) in the security group. Keep all other ports closed.
-
-# 2. SSH into the instance
-ssh -i your-key.pem ubuntu@<your-ec2-ip>
-
-# 3. Install Python and dependencies
-sudo apt update && sudo apt install -y python3 python3-pip python3-venv git
-
-# 4. Clone the repo
-git clone <repo-url> mr-scrooge
-cd mr-scrooge
-python3 -m venv venv && source venv/bin/activate
-pip install -r requirements.txt
-
-# 5. Configure your .env
-cp .env.example .env
-nano .env   # fill in OANDA_API_KEY, OANDA_ACCOUNT_ID, OANDA_BASE_URL
-
-# 6. Run directly to verify
-./start.sh
-```
-
-**Running as a persistent systemd service** (survives reboots, auto-restarts on crash):
-
-```bash
-# Create the service file
-mkdir -p ~/.config/systemd/user
-cat > ~/.config/systemd/user/mr-scrooge.service << EOF
-[Unit]
-Description=Mr. Scrooge Forex Bot
-After=network-online.target
-
-[Service]
-Type=simple
-WorkingDirectory=/home/ubuntu/mr-scrooge
-ExecStart=/home/ubuntu/mr-scrooge/start.sh
-Restart=always
-RestartSec=15
-
-[Install]
-WantedBy=default.target
-EOF
-
-# Enable lingering so the service runs without an active login session
-loginctl enable-linger ubuntu
-
-# Start and enable
-systemctl --user daemon-reload
-systemctl --user enable --now mr-scrooge.service
-
-# Check status
-systemctl --user status mr-scrooge.service
-```
-
-Do the same for mr-harvester if you want the profit extraction companion running.
-
----
-
-### Option B — Always-On Local Machine
-
-If you have a machine that stays on permanently (Mac Mini, NUC, old laptop), you can run it locally. Requirements: stable internet, no sleep mode, and ideally a UPS for power outages.
-
-On macOS, disable sleep in System Settings → Energy Saver. Use `launchctl` or a similar service manager to keep the bot running on reboot.
-
----
-
-## Viewing the Dashboard Remotely (Tailscale)
-
-The dashboard binds to `localhost` only — it is not exposed to the public internet. To access it remotely, use **Tailscale**, a zero-config VPN that connects your devices securely.
-
-**Setup:**
-
-```bash
-# On the server (EC2 or local machine):
-curl -fsSL https://tailscale.com/install.sh | sh
-sudo tailscale up
-
-# On your laptop/phone:
-# Install Tailscale from tailscale.com and sign in with the same account.
-```
-
-Once connected, both devices appear on the same private network. Access the dashboard by navigating to `http://<tailscale-ip-of-server>:8081` in your browser.
-
-You can find the Tailscale IP with:
-```bash
-tailscale ip -4   # on the server
-```
-
-The dashboard requires HTTP Basic Auth — credentials are set in `dashboard.py`.
-
----
-
-## Running Without OpenClaw
-
-Mr. Scrooge runs **fully standalone** — it does not require OpenClaw, the gateway, or any other infrastructure. `start.sh` and `main.py` are all you need.
-
-OpenClaw is a separate AI agent orchestration framework. If you are using it, you can register the bot as a monitored agent and access it via Slack or Telegram. If you are not using it, simply ignore any references to it in the logs or config.
-
----
-
-## Notes
-
-- The bot uses **margin-based sizing**, not fixed-lot sizing. It deploys 50% of available margin equity as the notional margin per trade. This means position size scales with your account.
-- Only one position is held at a time (`max_concurrent_positions: 1`). Capital concentrates in the single best qualifying setup.
-- The daily halt at 7.5% loss is hard — once triggered, no new entries are taken until the next UTC midnight reset.
-- Practice accounts are fully supported. Use the `api-fxpractice.oanda.com` base URL.
+Access the dashboard remotely via Tailscale (dashboard binds to `127.0.0.1` only).
