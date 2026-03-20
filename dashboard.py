@@ -241,9 +241,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
     TIMEFRAME_PRESETS = {
         '30m': {'box_timeframe': '30m', 'box_30m_lookback': 24,
-                'sl_pips': 10, 'tp1_pips': 20, 'tp2_pips': 40},
+                'sl_pips': 10, 'tp1_pips': 10, 'tp2_pips': 30},
         '1h':  {'box_timeframe': 'daily', 'box_30m_lookback': 8,
-                'sl_pips': 10, 'tp1_pips': 20, 'tp2_pips': 40},
+                'sl_pips': 10, 'tp1_pips': 10, 'tp2_pips': 30},
     }
 
     def _serve_timeframe(self):
