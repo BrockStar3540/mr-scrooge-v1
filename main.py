@@ -776,6 +776,8 @@ def process_instrument(symbol: str, ctx: dict) -> Optional[dict]:
 
     # Collect for dashboard status
     ctx.get('_last_signals', []).append(signal)
+    if signal.all_gates_passed:
+        ctx.setdefault('_last_signal_scores', {})[symbol] = signal.score
 
     if not signal.all_gates_passed or signal.action not in ('ENTER_LONG', 'ENTER_SHORT') or at_max_positions:
         ctx.get('pending_reentry', {}).pop(symbol, None)
@@ -818,6 +820,38 @@ def process_instrument(symbol: str, ctx: dict) -> Optional[dict]:
             decision_log.info(f'{symbol}: Re-entry rejected — {reentry.reason}')
             return None
         decision_log.info(f'{symbol}: Re-entry approved — {reentry.reason}')
+
+    # RANKING: all gates passed — queue as candidate, fire best-scored after full scan
+    ctx.setdefault('_cycle_entry_candidates', []).append({
+        'symbol':            symbol,
+        'signal':            signal,
+        'current_price':     current_price,
+        'half_box':          half_box,
+        'live_spread':       live_spread,
+        'total_overhead':    total_overhead,
+        'pending_reentry':   pending_reentry,
+        'open_wait_override': open_wait_override,
+        'zone_map':          zone_map,
+    })
+    return None
+
+
+def _fire_entry_candidate(cand: dict, ctx: dict):
+    """Execute entry for the best-scored candidate after all symbols are scanned."""
+    symbol           = cand['symbol']
+    signal           = cand['signal']
+    current_price    = cand['current_price']
+    half_box         = cand['half_box']
+    live_spread      = cand['live_spread']
+    total_overhead   = cand['total_overhead']
+    pending_reentry  = cand['pending_reentry']
+    open_wait_override = cand['open_wait_override']
+    zone_map         = cand['zone_map']
+
+    oanda         = ctx['oanda']
+    router        = ctx['router']
+    fee_calc      = ctx['fee_calc']
+    trade_manager = ctx['trade_manager']
 
     # Size the position — margin-utilization: deploy ~50% of equity as margin.
     # Harvester handles profit extraction via staggered partials (8/18/30 pip tiers).
@@ -1239,6 +1273,30 @@ def main():
             except Exception as e:
                 log.error(f'{symbol}: Unhandled error — {e}', exc_info=True)
 
+        # ── Ranking: fire best-scored entry candidate ──
+        _candidates = ctx.pop('_cycle_entry_candidates', [])
+        if _candidates and ctx['position_count'] < CONFIG['max_concurrent_positions']:
+            _candidates.sort(key=lambda c: c['signal'].score, reverse=True)
+            _best = _candidates[0]
+            _others = ', '.join(
+                f'{c["symbol"]}={c["signal"].score}' for c in _candidates[1:]
+            ) or 'none'
+            decision_log.info(
+                f'RANKING: {len(_candidates)} candidate(s) | winner={_best["symbol"]} '
+                f'score={_best["signal"].score} | others: {_others}'
+            )
+            ctx['_on_deck_symbol'] = _best['symbol']
+            ctx['_on_deck_score']  = _best['signal'].score
+            try:
+                _entry_event = _fire_entry_candidate(_best, ctx)
+            except Exception as _e:
+                log.error(f'_fire_entry_candidate error: {_e}', exc_info=True)
+                _entry_event = None
+        else:
+            if not _candidates:
+                ctx['_on_deck_symbol'] = None
+                ctx['_on_deck_score']  = 0
+
         # ── Write dashboard status ──
         ctx['_cycle_count'] = ctx.get('_cycle_count', 0) + 1
         try:
@@ -1272,6 +1330,8 @@ def main():
                         'breach_direction': _bs.breach_direction,
                         'breach_candles': _bs.breach_candles_confirmed,
                         'using_alternative': _bs.using_alternative,
+                        'signal_score': ctx.get('_last_signal_scores', {}).get(_sym, 0),
+                        'on_deck': ctx.get('_on_deck_symbol') == _sym,
                         'gates_required': _bs.confirmation_gates_required,
                     }
             _eq = ctx['oanda'].get_equity() or ctx['equity_start']

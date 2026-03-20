@@ -673,14 +673,16 @@ function renderBoxes() {
       ? '<span class="badge pass" style="font-size:10px">VALID</span>'
       : '<span class="badge fail" style="font-size:10px">WEAK</span>';
 
-    // Confidence bar
-    const conf = b.age_confidence_pct || 100;
-    const confColor = conf > 70 ? 'var(--green)' : conf > 40 ? 'var(--orange)' : 'var(--red)';
+    // Quality score (0-100) from signal engine; on_deck = selected for next entry
+    const score = b.signal_score || 0;
+    const scoreColor = score >= 70 ? 'var(--green)' : score >= 40 ? 'var(--orange)' : score > 0 ? 'var(--red)' : 'var(--dim)';
+    const deckBadge = b.on_deck ? '<span class="badge pass" style="font-size:10px;background:var(--gold);color:#000">ON DECK</span>' : '';
 
-    return `<div class="box-card">
+    return `<div class="box-card" style="${b.on_deck ? 'border:1px solid var(--gold)' : ''}">
       <div class="box-card-header">
         <h3>${fmtSymbol(sym)}</h3>
         <div style="display:flex;gap:6px;align-items:center">
+          ${deckBadge}
           ${validBadge}
           <span class="badge ${cls}">${label}</span>
         </div>
@@ -693,10 +695,10 @@ function renderBoxes() {
       <div class="box-row"><span class="box-key">Spread</span><span class="box-val">${spreadPips} pips</span></div>
       <div class="box-row"><span class="box-key">Box Age</span><span class="box-val">${b.box_age_hours ? b.box_age_hours.toFixed(1) + 'h' : '--'}</span></div>
       <div class="box-row">
-        <span class="box-key">Confidence</span>
+        <span class="box-key">Score</span>
         <span class="box-val">
-          <span class="bar-track"><span class="bar-fill" style="width:${conf}%;background:${confColor}"></span></span>
-          ${conf.toFixed(0)}%
+          <span class="bar-track"><span class="bar-fill" style="width:${score}%;background:${scoreColor}"></span></span>
+          ${score > 0 ? score + '/100' : '--'}
         </span>
       </div>
 

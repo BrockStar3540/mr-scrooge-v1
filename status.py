@@ -135,6 +135,7 @@ def write_status(cycle: int, equity: float, daily_pnl: float,
                 'risk_reward': round(sig.risk_reward_ratio, 2),
                 'rejection_reasons': sig.rejection_reasons,
                 'all_gates_passed': sig.all_gates_passed,
+                'score': getattr(sig, 'score', 0),
             }
             status['signals'].append(sig_dict)
         except Exception as e:
