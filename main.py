@@ -1,10 +1,10 @@
+#!/usr/bin/env python3
 # ============================================================
 # Copyright (c) Carl Brock 2026. All rights reserved.
 # Use, reproduction, modification, or distribution of this
 # software is permitted only with the express written
 # permission of Carl Brock.
 # ============================================================
-#!/usr/bin/env python3
 # ============================================================
 # MR. SCROOGE — MAIN RUNTIME LOOP
 # OANDA forex box theory reversal bot.
@@ -102,9 +102,9 @@ CONFIG = {
     'max_eur_positions':        2,       # EUR exposure cap — EUR trending; max 2 EUR pairs open
     'max_daily_loss_pct':       0.075,   # 7.5% daily halt — allows 5 full stops at 1.5% risk before shutdown
     'min_risk_reward':          1.60,    # Reduced to increase qualified setups while keeping RR > 1.5 floor
-    'sl_pips':                  5,       # Fixed SL: 5 pips beyond zone entry
-    'tp1_pips':                 10,      # Fixed TP1: 10 pips from entry (quick partial)
-    'tp2_pips':                 30,      # Fixed TP2: 30 pips from entry (full exit)
+    'sl_pips':                  10,      # Fixed SL: 10 pips beyond zone entry
+    'tp1_pips':                 20,      # Fixed TP1: 20 pips from entry (quick partial)
+    'tp2_pips':                 40,      # Fixed TP2: 40 pips from entry (full exit)
 
     # Timing
     'scan_interval_seconds':    300,     # 5 minutes
@@ -935,9 +935,9 @@ def process_instrument(symbol: str, ctx: dict) -> Optional[dict]:
 
         # Recalculate SL/TP from actual fill price (not zone trigger).
         # This corrects for slippage when price has moved through the zone.
-        _sl_pips  = CONFIG.get('sl_pips',  5)
-        _tp1_pips = CONFIG.get('tp1_pips', 10)
-        _tp2_pips = CONFIG.get('tp2_pips', 30)
+        _sl_pips  = CONFIG.get('sl_pips',  10)
+        _tp1_pips = CONFIG.get('tp1_pips', 20)
+        _tp2_pips = CONFIG.get('tp2_pips', 40)
         if direction == 'BUY':
             _sl_fill  = round(actual_fill - _sl_pips  * pip_size, 5)
             _tp1_fill = round(actual_fill + _tp1_pips * pip_size, 5)

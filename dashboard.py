@@ -241,9 +241,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
     TIMEFRAME_PRESETS = {
         '30m': {'box_timeframe': '30m', 'box_30m_lookback': 24,
-                'sl_pips': 5, 'tp1_pips': 10, 'tp2_pips': 30},
+                'sl_pips': 10, 'tp1_pips': 20, 'tp2_pips': 40},
         '1h':  {'box_timeframe': 'daily', 'box_30m_lookback': 8,
-                'sl_pips': 5, 'tp1_pips': 10, 'tp2_pips': 30},
+                'sl_pips': 10, 'tp1_pips': 20, 'tp2_pips': 40},
     }
 
     def _serve_timeframe(self):
@@ -279,18 +279,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
             data['globals'].update(preset)
             with open(json_path, 'w') as f:
                 json.dump(data, f, indent=2)
-            # Restart bot
-            import subprocess, time
-            subprocess.run(['pkill', '-f', 'python3 main.py'], cwd=BOT_DIR)
-            time.sleep(2)
-            lock = os.path.join(BOT_DIR, 'logs', 'scrooge.lock')
-            if os.path.exists(lock):
-                os.remove(lock)
-            log_fd = open(os.path.join(BOT_DIR, 'logs', 'mrscrooge.log'), 'a')
-            subprocess.Popen(['python3', 'main.py'], cwd=BOT_DIR,
-                             stdout=log_fd, stderr=subprocess.STDOUT,
-                             start_new_session=True)
-            log_fd.close()
+            # Restart bot via systemd (avoids duplicate processes)
+            import subprocess
+            subprocess.run(['systemctl', '--user', 'restart', 'mr-scrooge.service'])
             self._json({'status': 'ok', 'timeframe': tf,
                         'message': f'Switched to {tf.upper()} mode — bot restarting'})
         except Exception as e:

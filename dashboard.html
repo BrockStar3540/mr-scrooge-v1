@@ -909,7 +909,7 @@ async function saveHarvesterConfig() {
   try {
     const r = await fetch(API + '/api/harvester-config', {
       method: 'POST',
-      headers: {...authHeaders(), 'Content-Type': 'application/json'},
+      headers: {'Content-Type': 'application/json'},
       body: JSON.stringify(cfg),
     });
     const d = await r.json();
@@ -997,7 +997,7 @@ function truncate(str, max) {
 // ── Timeframe toggle ────────────────────────────────
 async function fetchTimeframe() {
   try {
-    const r = await fetch(API + '/api/timeframe', {headers: authHeaders()});
+    const r = await fetch(API + '/api/timeframe');
     if (!r.ok) return;
     const d = await r.json();
     _updateTfButtons(d.timeframe || '30m');

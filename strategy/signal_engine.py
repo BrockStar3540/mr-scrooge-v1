@@ -115,6 +115,9 @@ class SignalResult:
     # Open wait instructions
     wait_for: str               # What to watch for next
 
+    # Quality score
+    score: int = 0             # Opportunity quality score 0-100 (higher = better setup)
+
 
 # ============================================================
 # SIGNAL ENGINE
@@ -322,7 +325,7 @@ class SignalEngine:
 
         action = 'ENTER_LONG' if direction == 'long' else 'ENTER_SHORT'
 
-        return SignalResult(
+        _result = SignalResult(
             symbol=symbol,
             timestamp=datetime.now().isoformat(),
             action=action,
@@ -350,6 +353,39 @@ class SignalEngine:
             all_gates_passed=True,
             wait_for=''
         )
+        _result.score = self._calculate_score(_result)
+        return _result
+
+
+    # ----------------------------------------------------------
+    # SCORING: Opportunity quality score (0-100)
+    # ----------------------------------------------------------
+
+    def _calculate_score(self, sig) -> int:
+        """Score a qualifying signal. Higher = better trade setup."""
+        pts = 0
+        # Zone tier (1=best)
+        pts += {1: 30, 2: 20, 3: 10}.get(sig.zone_tier, 5)
+        # ATR strength
+        pts += {'strong': 20, 'valid': 15, 'weak': 5}.get(sig.atr_strength, 5)
+        # OTR category
+        pts += {'excellent': 15, 'acceptable': 10, 'marginal': 5}.get(sig.otr_category, 0)
+        # Risk/reward ratio
+        if sig.risk_reward_ratio >= 3.0:
+            pts += 15
+        elif sig.risk_reward_ratio >= 2.0:
+            pts += 10
+        elif sig.risk_reward_ratio >= 1.5:
+            pts += 5
+        # Pitchfork type: named signals are higher quality
+        if sig.pitchfork:
+            if sig.pitchfork.signal_type in ('john_wick', 'power_of_towers'):
+                pts += 10
+            else:
+                pts += 5
+            conf_pts = {'HIGH': 5, 'MODERATE': 3}
+            pts += conf_pts.get(sig.pitchfork.confidence, 0)
+        return pts
 
     # ----------------------------------------------------------
     # GATE 1: ZONE CHECK
