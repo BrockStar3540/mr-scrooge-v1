@@ -178,3 +178,20 @@ Removed:
 - `2389afe` — opportunity scoring, ON DECK, dead code audit, SL/TP pip values, TF toggle
 - `6ecd754` — margin sizing bug fix, cap formula fix, Config tab update
 - `fbb0285` — equity source: NAV → balance
+- `536a460` — remove dead leverage config key, fix Config tab duplicate field
+- `2a07bba` — candidate fallthrough on staleness check
+
+---
+
+## Change Log (2026-03-20, late session)
+
+**12. Stale #1 candidate blocked all entries that cycle**
+- If the top-ranked candidate failed the staleness check in `_fire_entry_candidate()`, no trade fired that cycle even when lower-ranked candidates were still valid.
+- Fixed: ranking loop now iterates through all candidates in score order, trying each until one fires or the list is exhausted.
+- Commit: `2a07bba`
+
+**13. Config tab: leverage field misleading, duplicate Min Net Profit**
+- "Leverage 50:1" was still showing after `CONFIG['leverage']` was removed from sizing logic — replaced with "Margin Rate: Per instrument (OANDA)".
+- "Min Net Profit 7 pips" appeared in both SL/TP and OTR sections — removed from SL/TP.
+- `CONFIG['leverage']` key removed from `main.py` entirely (dead code).
+- Commit: `536a460`
