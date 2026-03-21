@@ -45,13 +45,15 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from core.oanda_client import OANDAClient
 from core.fee_calculator import OANDAFeeCalculator
 from core.execution_router import OANDAExecutionRouter
-from strategy.zone_detector import ZoneDetector
-from strategy.signal_engine import SignalEngine
-from strategy.box_state_machine import BoxStateMachine, BoxState
-from strategy.universe_screener import ForexUniverseScreener
-from strategy.universe_screener import BASE_PAIRS as SCROOGE_BASE_PAIRS
-from strategy.universe_screener import PROBATION_PAIRS as SCROOGE_PROBATION_PAIRS
-from strategy.universe_screener import get_active_sessions, get_session_pairs, SESSION_WINDOWS
+from gates import (
+    ZoneDetector,
+    SignalEngine,
+    BoxStateMachine, BoxState,
+    ForexUniverseScreener,
+    BASE_PAIRS as SCROOGE_BASE_PAIRS,
+    PROBATION_PAIRS as SCROOGE_PROBATION_PAIRS,
+    get_active_sessions, get_session_pairs, SESSION_WINDOWS,
+)
 from portfolio.trade_manager import TradeManager
 from status import write_status
 
