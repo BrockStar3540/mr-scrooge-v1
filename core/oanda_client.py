@@ -4,655 +4,390 @@
 # software is permitted only with the express written
 # permission of Carl Brock.
 # ============================================================
-# ============================================================
-# MR. SCROOGE — OANDA CLIENT
-# OANDA v20 REST API client.
-# Handles bar fetching (5M, 1H, D), live spreads, order placement,
-# account summary, and open trade reconciliation.
-# ============================================================
+"""
+mr-scrooge-v2 — OANDA Client
+OANDA v20 REST API. Fetches bars, spreads, account state, executes orders.
+Health monitoring: registers as 'oanda_client' with HealthMonitor.
+"""
 
 import os
 import time
-import math
 import logging
 import requests
 import pandas as pd
 from datetime import datetime, timezone
-from typing import Optional, Dict, List, Tuple
+from typing import Optional, Dict, List
 from dotenv import load_dotenv
 
 load_dotenv()
 
-log = logging.getLogger('mr-scrooge.oanda')
+log = logging.getLogger('mr-scrooge-v2.oanda')
+
+# Health monitor — imported lazily to avoid circular at module load
+def _monitor():
+    from health.monitor import HealthMonitor
+    return HealthMonitor.get()
 
 
 class OANDAClient:
     """
-    OANDA v20 REST API client for Mr. Scrooge.
-
-    Used for:
-    - Fetching daily bars (PDH/PDL box)
-    - Fetching hourly bars (magic lines)
-    - Fetching 5-minute bars (signal confirmation)
-    - Getting live spread
-    - Placing limit orders (primary)
-    - Placing market orders (emergency exit only)
-    - Querying open positions and margin
+    OANDA v20 REST API client for mr-scrooge-v2.
+    Records success/failure on every API call via HealthMonitor.
+    Circuit breaker auto-disables after 5 consecutive failures.
     """
 
+    _COMPONENT = 'oanda_client'
+
     def __init__(self):
-        self.api_key = os.getenv('OANDA_API_KEY')
+        self.api_key    = os.getenv('OANDA_API_KEY')
         self.account_id = os.getenv('OANDA_ACCOUNT_ID')
         env = os.getenv('OANDA_ENVIRONMENT', 'practice')
 
         if env == 'live':
             self.base_url = 'https://api-fxtrade.oanda.com'
-            self.stream_url = 'https://stream-fxtrade.oanda.com'
         else:
             self.base_url = 'https://api-fxpractice.oanda.com'
-            self.stream_url = 'https://stream-fxpractice.oanda.com'
 
         self.headers = {
             'Authorization': f'Bearer {self.api_key}',
-            'Content-Type': 'application/json',
-            'Accept-Datetime-Format': 'RFC3339'
+            'Content-Type':  'application/json',
+            'Accept-Datetime-Format': 'RFC3339',
         }
-
         self._instrument_cache: Dict = {}
+        _monitor().register(self._COMPONENT, failure_threshold=5, recovery_seconds=120)
         self._load_instruments()
 
-    # ----------------------------------------------------------
-    # INSTRUMENTS & PRICING
-    # ----------------------------------------------------------
+    # ── Internal helpers ─────────────────────────────────────
+
+    def _get(self, url: str, params: dict = None, timeout: int = 10) -> Optional[dict]:
+        """GET with health tracking. Returns parsed JSON or None."""
+        t0 = time.monotonic()
+        try:
+            r = requests.get(url, headers=self.headers, params=params, timeout=timeout)
+            r.raise_for_status()
+            ms = (time.monotonic() - t0) * 1000
+            _monitor().record_success(self._COMPONENT, ms)
+            return r.json()
+        except Exception as exc:
+            ms = (time.monotonic() - t0) * 1000
+            _monitor().record_failure(self._COMPONENT, str(exc), ms)
+            log.warning(f'GET {url}: {exc}')
+            return None
+
+    def _post(self, url: str, body: dict, timeout: int = 10) -> Optional[dict]:
+        """POST with health tracking. Returns parsed JSON or None."""
+        t0 = time.monotonic()
+        try:
+            r = requests.post(url, headers=self.headers, json=body, timeout=timeout)
+            r.raise_for_status()
+            ms = (time.monotonic() - t0) * 1000
+            _monitor().record_success(self._COMPONENT, ms)
+            return r.json()
+        except Exception as exc:
+            ms = (time.monotonic() - t0) * 1000
+            _monitor().record_failure(self._COMPONENT, str(exc), ms)
+            log.error(f'POST {url}: {exc}')
+            return None
+
+    def _put(self, url: str, body: dict, timeout: int = 10) -> Optional[dict]:
+        """PUT with health tracking. Returns parsed JSON or None."""
+        t0 = time.monotonic()
+        try:
+            r = requests.put(url, headers=self.headers, json=body, timeout=timeout)
+            r.raise_for_status()
+            ms = (time.monotonic() - t0) * 1000
+            _monitor().record_success(self._COMPONENT, ms)
+            return r.json()
+        except Exception as exc:
+            ms = (time.monotonic() - t0) * 1000
+            _monitor().record_failure(self._COMPONENT, str(exc), ms)
+            log.error(f'PUT {url}: {exc}')
+            return None
+
+    # ── Instruments ──────────────────────────────────────────
 
     def _load_instruments(self):
-        """Cache instrument metadata (pip sizes, min trade sizes)."""
-        try:
-            url = f"{self.base_url}/v3/accounts/{self.account_id}/instruments"
-            r = requests.get(url, headers=self.headers, timeout=10)
-            r.raise_for_status()
-            for inst in r.json().get('instruments', []):
+        """Cache instrument metadata (pip sizes, margin rates)."""
+        url = f'{self.base_url}/v3/accounts/{self.account_id}/instruments'
+        data = self._get(url)
+        if data:
+            for inst in data.get('instruments', []):
                 self._instrument_cache[inst['name']] = inst
-            log.info(f"Instrument metadata loaded: {len(self._instrument_cache)} instruments cached")
-        except Exception as e:
-            log.error(f"Failed to load instruments: {e}")
+            log.info(f'Instrument metadata loaded: {len(self._instrument_cache)} instruments')
+
+    # ── Pricing ──────────────────────────────────────────────
 
     def get_prices(self, instruments: List[str]) -> Dict[str, Dict]:
-        """Get current bid/ask prices for multiple instruments at once."""
-        try:
-            url = f"{self.base_url}/v3/accounts/{self.account_id}/pricing"
-            params = {'instruments': ','.join(instruments)}
-            r = requests.get(url, headers=self.headers, params=params, timeout=5)
-            r.raise_for_status()
-            result = {}
-            for p in r.json().get('prices', []):
-                result[p['instrument']] = {
-                    'bid': float(p['bids'][0]['price']),
-                    'ask': float(p['asks'][0]['price']),
-                }
-            return result
-        except Exception as e:
-            log.warning(f"Multi-price fetch failed: {e}")
+        url = f'{self.base_url}/v3/accounts/{self.account_id}/pricing'
+        data = self._get(url, params={'instruments': ','.join(instruments)}, timeout=5)
+        if not data:
             return {}
-
-    def get_pip_value_per_unit(self,
-                                instrument: str,
-                                current_mid: float,
-                                account_currency: str = 'USD') -> float:
-        """
-        Returns pip value in account currency per unit held.
-
-        Critical for correct position sizing on non-USD-quote pairs:
-          USD/JPY: pip = 0.01 JPY → must convert to USD (÷ current price)
-          EUR/GBP: pip = 0.0001 GBP → must fetch GBP/USD and multiply
-          EUR/USD: pip = 0.0001 USD → no conversion needed (quote IS USD)
-
-        Without this, USD/JPY sizing is off by ~100x.
-        """
-        inst = self._instrument_cache.get(instrument)
-        if inst is None:
-            # Reload and retry once
-            self._load_instruments()
-            inst = self._instrument_cache.get(instrument)
-
-        if inst is None:
-            # Last-resort fallback — better than crashing
-            pip_val = (0.01 / current_mid) if "JPY" in instrument and current_mid and current_mid > 0 else 0.0001
-            log.warning(f'{instrument}: no metadata — using fallback pip value {pip_val:.8f}')
-            return pip_val
-
-        pip_loc        = int(inst.get('pipLocation', -4))
-        pip_size       = 10 ** pip_loc
-        parts          = instrument.split('_')
-        base_currency  = parts[0] if len(parts) >= 1 else ''
-        quote_currency = parts[1] if len(parts) >= 2 else ''
-
-        # Pip value in quote currency (always pip_size per unit)
-        pip_value_quote = pip_size
-
-        # Case 1: quote IS the account currency (EUR/USD, GBP/USD, etc.)
-        if quote_currency == account_currency:
-            return pip_value_quote
-
-        # Case 2: base IS the account currency (USD/JPY, USD/CAD, etc.)
-        # Pip is in quote; convert back to USD via 1/price
-        if base_currency == account_currency:
-            if current_mid <= 0:
-                return pip_value_quote
-            return pip_value_quote / current_mid
-
-        # Case 3: cross pair (EUR/GBP, EUR/CHF, etc.)
-        # Fetch quote_currency/USD conversion rate
-        _USD_BASE_QUOTES = {'JPY', 'CHF', 'CAD', 'HKD', 'SGD', 'DKK', 'NOK', 'SEK', 'ZAR', 'MXN'}
-
-        def _mid(pair: str) -> Optional[float]:
-            try:
-                prices = self.get_prices([pair])
-                px = prices.get(pair)
-                if px:
-                    return (px['bid'] + px['ask']) / 2.0
-            except Exception as exc:
-                log.debug(f'Conversion lookup failed for {pair}: {exc}')
-            return None
-
-        # OANDA quotes USD_X for currencies where USD is the base
-        if quote_currency in _USD_BASE_QUOTES:
-            first_pair  = f'{account_currency}_{quote_currency}'
-            second_pair = f'{quote_currency}_{account_currency}'
-        else:
-            first_pair  = f'{quote_currency}_{account_currency}'
-            second_pair = f'{account_currency}_{quote_currency}'
-
-        mid = _mid(first_pair)
-        if mid:
-            rate = mid if first_pair.startswith(quote_currency) else 1.0 / mid
-            return pip_value_quote * rate
-
-        mid_inv = _mid(second_pair)
-        if mid_inv and mid_inv > 0:
-            rate = mid_inv if second_pair.startswith(quote_currency) else 1.0 / mid_inv
-            return pip_value_quote * rate
-
-        log.warning(f'{instrument}: could not convert {quote_currency} → {account_currency}, using raw pip value')
-        return pip_value_quote
+        result = {}
+        for p in data.get('prices', []):
+            result[p['instrument']] = {
+                'bid': float(p['bids'][0]['price']),
+                'ask': float(p['asks'][0]['price']),
+            }
+        return result
 
     def get_live_spread(self, instrument: str) -> Optional[float]:
-        """
-        Returns current bid/ask spread in price units.
-        Used by signal engine to calculate OTR ratio.
-        """
-        try:
-            url = f"{self.base_url}/v3/accounts/{self.account_id}/pricing"
-            params = {'instruments': instrument}
-            r = requests.get(url, headers=self.headers, params=params, timeout=5)
-            r.raise_for_status()
-            prices = r.json().get('prices', [])
-            if prices:
-                asks = float(prices[0]['asks'][0]['price'])
-                bids = float(prices[0]['bids'][0]['price'])
-                return asks - bids
-        except Exception as e:
-            log.warning(f"Spread fetch failed {instrument}: {e}")
+        prices = self.get_prices([instrument])
+        p = prices.get(instrument)
+        if p:
+            return p['ask'] - p['bid']
         return None
 
-    # ----------------------------------------------------------
-    # BAR DATA — THE CORE NEED FOR MR. SCROOGE
-    # ----------------------------------------------------------
+    def get_pip_value_per_unit(self, instrument: str, current_mid: float,
+                                account_currency: str = 'USD') -> float:
+        inst = self._instrument_cache.get(instrument)
+        if inst is None:
+            self._load_instruments()
+            inst = self._instrument_cache.get(instrument)
+        if inst is None:
+            fallback = (0.01 / current_mid) if 'JPY' in instrument and current_mid > 0 else 0.0001
+            log.warning(f'{instrument}: no metadata — fallback pip value {fallback:.8f}')
+            return fallback
 
-    def get_candles(self,
-                     instrument: str,
-                     granularity: str,
-                     count: int = 50) -> Optional[pd.DataFrame]:
-        """
-        Fetches OHLCV bars for any timeframe.
+        pip_size = 10 ** int(inst.get('pipLocation', -4))
+        parts = instrument.split('_')
+        base_ccy  = parts[0] if len(parts) >= 1 else ''
+        quote_ccy = parts[1] if len(parts) >= 2 else ''
+        pip_value_quote = pip_size
 
-        granularity options:
-          'M5'  → 5-minute bars  (signal confirmation)
-          'H1'  → 1-hour bars    (magic lines)
-          'D'   → daily bars     (PDH/PDL box + ATR)
+        if quote_ccy == account_currency:
+            return pip_value_quote
+        if base_ccy == account_currency:
+            return pip_value_quote / current_mid if current_mid > 0 else pip_value_quote
 
-        Returns DataFrame with columns: open, high, low, close, volume
-        Index is datetime (UTC).
-        """
-        try:
-            url = f"{self.base_url}/v3/instruments/{instrument}/candles"
-            params = {
-                'granularity': granularity,
-                'count': count,
-                'price': 'M'  # midpoint candles
-            }
-            r = requests.get(url, headers=self.headers, params=params, timeout=10)
-            r.raise_for_status()
+        # Cross pair — fetch conversion rate
+        _USD_BASE = {'JPY','CHF','CAD','HKD','SGD','DKK','NOK','SEK','ZAR','MXN'}
+        def _mid(pair: str) -> Optional[float]:
+            px = self.get_prices([pair]).get(pair)
+            return (px['bid'] + px['ask']) / 2.0 if px else None
 
-            candles = r.json().get('candles', [])
-            if not candles:
-                return None
+        if quote_ccy in _USD_BASE:
+            p1, p2 = f'{account_currency}_{quote_ccy}', f'{quote_ccy}_{account_currency}'
+        else:
+            p1, p2 = f'{quote_ccy}_{account_currency}', f'{account_currency}_{quote_ccy}'
 
-            rows = []
-            for c in candles:
-                rows.append({
-                    'time': pd.to_datetime(c['time']),
-                    'open': float(c['mid']['o']),
-                    'high': float(c['mid']['h']),
-                    'low': float(c['mid']['l']),
-                    'close': float(c['mid']['c']),
-                    'volume': int(c.get('volume', 0))
-                })
+        mid = _mid(p1)
+        if mid:
+            rate = mid if p1.startswith(quote_ccy) else 1.0 / mid
+            return pip_value_quote * rate
+        mid2 = _mid(p2)
+        if mid2 and mid2 > 0:
+            rate = mid2 if p2.startswith(quote_ccy) else 1.0 / mid2
+            return pip_value_quote * rate
 
-            if not rows:
-                return None
+        log.warning(f'{instrument}: could not convert {quote_ccy}→{account_currency}')
+        return pip_value_quote
 
-            df = pd.DataFrame(rows)
-            df.set_index('time', inplace=True)
-            return df
+    # ── Bar data ─────────────────────────────────────────────
 
-        except Exception as e:
-            log.error(f"Candle fetch failed {instrument} {granularity}: {e}")
+    def get_candles(self, instrument: str, granularity: str,
+                    count: int = 50) -> Optional[pd.DataFrame]:
+        url = f'{self.base_url}/v3/instruments/{instrument}/candles'
+        data = self._get(url, params={'granularity': granularity, 'count': count, 'price': 'M'})
+        if not data:
             return None
+        candles = data.get('candles', [])
+        if not candles:
+            return None
+        rows = [
+            {
+                'time':   pd.to_datetime(c['time']),
+                'open':   float(c['mid']['o']),
+                'high':   float(c['mid']['h']),
+                'low':    float(c['mid']['l']),
+                'close':  float(c['mid']['c']),
+                'volume': int(c.get('volume', 0)),
+            }
+            for c in candles
+        ]
+        df = pd.DataFrame(rows)
+        df.set_index('time', inplace=True)
+        return df
 
     def get_daily_bars(self, instrument: str, count: int = 20) -> Optional[pd.DataFrame]:
-        """Daily bars for PDH/PDL box and ATR calculation."""
         return self.get_candles(instrument, 'D', count)
 
     def get_hourly_bars(self, instrument: str, count: int = 50) -> Optional[pd.DataFrame]:
-        """Hourly bars for magic line detection."""
         return self.get_candles(instrument, 'H1', count)
 
-    def get_30m_bars(self, instrument: str, count: int = 100) -> Optional[pd.DataFrame]:
-        """30-minute bars for experimental rolling box."""
-        return self.get_candles(instrument, 'M30', count)
-
     def get_5m_bars(self, instrument: str, count: int = 50) -> Optional[pd.DataFrame]:
-        """5-minute bars for pitchfork/signal confirmation."""
         return self.get_candles(instrument, 'M5', count)
 
-    def get_recent_bars(self,
-                         instrument: str,
-                         count: int = 50,
-                         granularity: str = 'M5') -> Optional[pd.DataFrame]:
-        """Generic recent bars fetch — alias for compatibility."""
-        return self.get_candles(instrument, granularity, count)
+    def get_30m_bars(self, instrument: str, count: int = 100) -> Optional[pd.DataFrame]:
+        return self.get_candles(instrument, 'M30', count)
 
-    # ----------------------------------------------------------
-    # ACCOUNT STATE
-    # ----------------------------------------------------------
+    # ── Account state ────────────────────────────────────────
 
     def get_account_summary(self) -> Optional[Dict]:
-        """Returns full account summary including equity, margin, NAV."""
-        try:
-            url = f"{self.base_url}/v3/accounts/{self.account_id}/summary"
-            r = requests.get(url, headers=self.headers, timeout=10)
-            r.raise_for_status()
-            return r.json().get('account', {})
-        except Exception as e:
-            log.error(f"Account summary failed: {e}")
-            return None
+        url = f'{self.base_url}/v3/accounts/{self.account_id}/summary'
+        data = self._get(url)
+        return data.get('account') if data else None
 
     def get_equity(self) -> Optional[float]:
-        """Returns account balance (cash only, excludes unrealized P&L)."""
-        summary = self.get_account_summary()
-        if summary:
-            return float(summary.get('balance', 0))
-        return None
-
-    def get_margin_used(self) -> Optional[float]:
-        summary = self.get_account_summary()
-        if summary:
-            return float(summary.get('marginUsed', 0))
-        return None
+        s = self.get_account_summary()
+        return float(s['balance']) if s else None
 
     def get_free_margin(self) -> Optional[float]:
-        """Returns available margin (marginAvailable) from OANDA account summary."""
-        summary = self.get_account_summary()
-        if summary:
-            return float(summary.get('marginAvailable', 0))
-        return None
+        s = self.get_account_summary()
+        return float(s['marginAvailable']) if s else None
 
-    def get_open_trades(self) -> List[Dict]:
-        """Returns all open trades on the OANDA account."""
-        try:
-            url = f"{self.base_url}/v3/accounts/{self.account_id}/openTrades"
-            r = requests.get(url, headers=self.headers, timeout=10)
-            r.raise_for_status()
-            return r.json().get('trades', [])
-        except Exception as e:
-            log.error(f"Open trades fetch failed: {e}")
-            return []
-
-    def get_trade_realized_pl(self, trade_id: str) -> Optional[float]:
-        """
-        Returns realized PnL for a specific trade from OANDA.
-        Useful when a trade is closed natively (SL/TP/manual) between bot cycles.
-        """
-        try:
-            url = f"{self.base_url}/v3/accounts/{self.account_id}/trades/{trade_id}"
-            r = requests.get(url, headers=self.headers, timeout=10)
-            r.raise_for_status()
-            trade = r.json().get('trade', {})
-            realized = trade.get('realizedPL')
-            if realized is None:
-                return None
-            return float(realized)
-        except Exception as e:
-            log.warning(f"Trade realized PnL fetch failed for {trade_id}: {e}")
-            return None
-
-    def get_daily_realized_pl(self) -> float:
-        """Returns total realized P/L for today (since midnight UTC) from OANDA transactions."""
-        from datetime import datetime, timezone
-        try:
-            today = datetime.now(timezone.utc).strftime('%Y-%m-%dT00:00:00.000000000Z')
-            url = (f"{self.base_url}/v3/accounts/{self.account_id}/transactions"
-                   f"?from={today}&type=ORDER_FILL")
-            r = requests.get(url, headers=self.headers, timeout=10)
-            r.raise_for_status()
-            pages = r.json().get('pages', [])
-            total_pl = 0.0
-            for page_url in pages:
-                pr = requests.get(page_url, headers=self.headers, timeout=10)
-                pr.raise_for_status()
-                for tx in pr.json().get('transactions', []):
-                    pl = tx.get('pl', '0')
-                    total_pl += float(pl)
-            return round(total_pl, 2)
-        except Exception as e:
-            log.warning(f"Daily realized PL fetch failed: {e}")
-            return 0.0
-
-    def get_alltime_realized_pl(self) -> float:
-        """Returns all-time realized P/L from OANDA account summary."""
-        summary = self.get_account_summary()
-        if summary:
-            return round(float(summary.get('pl', 0)), 2)
-        return 0.0
+    def get_margin_used(self) -> Optional[float]:
+        s = self.get_account_summary()
+        return float(s['marginUsed']) if s else None
 
     def get_combined_margin_pct(self) -> float:
-        """
-        Returns margin used as % of equity.
-        Used to check overall account leverage before new entries.
-        """
-        try:
-            summary = self.get_account_summary()
-            if summary:
-                margin_used = float(summary.get('marginUsed', 0))
-                balance = float(summary.get('balance', 1))
-                return margin_used / balance if balance > 0 else 1.0
-        except:
-            pass
+        s = self.get_account_summary()
+        if s:
+            balance = float(s.get('balance', 1))
+            return float(s.get('marginUsed', 0)) / balance if balance > 0 else 1.0
         return 0.0
 
-    # ----------------------------------------------------------
-    # ORDER EXECUTION
-    # ----------------------------------------------------------
+    def get_open_trades(self) -> List[Dict]:
+        url = f'{self.base_url}/v3/accounts/{self.account_id}/openTrades'
+        data = self._get(url)
+        return data.get('trades', []) if data else []
 
-    def place_limit_order(self,
-                           instrument: str,
-                           side: str,
-                           units: float,
-                           price: float,
-                           take_profit: float,
-                           stop_loss: float,
+    def get_trade_realized_pl(self, trade_id: str) -> Optional[float]:
+        url = f'{self.base_url}/v3/accounts/{self.account_id}/trades/{trade_id}'
+        data = self._get(url)
+        if data:
+            rpl = data.get('trade', {}).get('realizedPL')
+            return float(rpl) if rpl is not None else None
+        return None
+
+    def get_daily_realized_pl(self) -> float:
+        today = datetime.now(timezone.utc).strftime('%Y-%m-%dT00:00:00.000000000Z')
+        url = (f'{self.base_url}/v3/accounts/{self.account_id}/transactions'
+               f'?from={today}&type=ORDER_FILL')
+        data = self._get(url)
+        if not data:
+            return 0.0
+        total = 0.0
+        for page_url in data.get('pages', []):
+            pd_data = self._get(page_url)
+            if pd_data:
+                for tx in pd_data.get('transactions', []):
+                    total += float(tx.get('pl', 0))
+        return round(total, 2)
+
+    def get_alltime_realized_pl(self) -> float:
+        s = self.get_account_summary()
+        return round(float(s.get('pl', 0)), 2) if s else 0.0
+
+    # ── Order execution ──────────────────────────────────────
+
+    def place_entry_order(self, instrument: str, side: str, units: float,
+                           take_profit: float, stop_loss: float,
                            client_trade_id: str) -> Dict:
-        """
-        Places a limit order — primary execution method.
-        Mr. Scrooge always tries limit orders first to avoid slippage.
-
-        side: 'BUY' or 'SELL'
-        units: positive number (sign determined by side)
-        price: limit price
-        """
-        signed_units = units if side == 'BUY' else -units
-
-        order_body = {
-            "order": {
-                "type": "LIMIT",
-                "instrument": instrument,
-                "units": str(signed_units),
-                "price": str(round(price, 5)),
-                "timeInForce": "GTC",
-                "takeProfitOnFill": {
-                    "price": str(round(take_profit, 5))
-                },
-                "stopLossOnFill": {
-                    "price": str(round(stop_loss, 5))
-                },
-                "clientExtensions": {
-                    "id": client_trade_id,
-                    "comment": "mr-scrooge"
-                }
-            }
-        }
-
-        try:
-            url = f"{self.base_url}/v3/accounts/{self.account_id}/orders"
-            r = requests.post(url, headers=self.headers, json=order_body, timeout=10)
-            r.raise_for_status()
-            result = r.json()
-            order_id = result.get('orderCreateTransaction', {}).get('id', 'unknown')
-            log.info(
-                f"Limit order placed: {instrument} {side} {units:.4f} @ {price:.5f} "
-                f"| TP: {take_profit:.5f} SL: {stop_loss:.5f} | Order ID: {order_id}"
-            )
-            return {'success': True, 'order_id': order_id, 'raw': result}
-        except Exception as e:
-            log.error(f"Limit order failed {instrument}: {e}")
-            return {'success': False, 'error': str(e)}
-
-    def place_entry_order(self,
-                           instrument: str,
-                           side: str,
-                           units: float,
-                           take_profit: float,
-                           stop_loss: float,
-                           client_trade_id: str) -> Dict:
-        """
-        Market order for entries — fills immediately at current bid/ask.
-        Used instead of limit orders: OANDA cancels limit orders placed at/near current price
-        (WOULD_TRIGGER_IMMEDIATELY). Market orders fill instantly; cost is just the spread,
-        which is already factored into the OTR calculation.
-        """
+        """Market order for entries. Fills immediately at bid/ask."""
         signed_units = int(round(units)) if side == 'BUY' else -int(round(units))
         decimals = 3 if 'JPY' in instrument else 5
-
-        order_body = {
-            "order": {
-                "type": "MARKET",
-                "instrument": instrument,
-                "units": str(signed_units),
-                "timeInForce": "FOK",
-                "positionFill": "DEFAULT",
-                "takeProfitOnFill": {
-                    "price": f"{take_profit:.{decimals}f}"
-                },
-                "stopLossOnFill": {
-                    "price": f"{stop_loss:.{decimals}f}"
-                },
-                "tradeClientExtensions": {
-                    "id": client_trade_id,
-                    "comment": "mr-scrooge"
-                }
+        body = {
+            'order': {
+                'type': 'MARKET',
+                'instrument': instrument,
+                'units': str(signed_units),
+                'timeInForce': 'FOK',
+                'positionFill': 'DEFAULT',
+                'takeProfitOnFill': {'price': f'{take_profit:.{decimals}f}'},
+                'stopLossOnFill':   {'price': f'{stop_loss:.{decimals}f}'},
+                'tradeClientExtensions': {'id': client_trade_id, 'comment': 'mr-scrooge-v2'},
             }
         }
+        url = f'{self.base_url}/v3/accounts/{self.account_id}/orders'
+        result = self._post(url, body)
+        if result is None:
+            return {'success': False, 'error': 'POST failed'}
 
-        try:
-            url = f"{self.base_url}/v3/accounts/{self.account_id}/orders"
-            r = requests.post(url, headers=self.headers, json=order_body, timeout=10)
-            r.raise_for_status()
-            result = r.json()
+        fill_tx = result.get('orderFillTransaction')
+        if not fill_tx:
+            cancel = result.get('orderCancelTransaction', {})
+            reject = result.get('orderRejectTransaction', {})
+            reason = cancel.get('reason') or reject.get('rejectReason') or 'unknown'
+            log.error(f'Entry NOT filled: {instrument} {side} | {reason}')
+            return {'success': False, 'error': reason, 'raw': result}
 
-            fill_tx = result.get('orderFillTransaction')
-            if not fill_tx:
-                # Order was created but not filled — extract cancellation reason
-                cancel_tx = result.get('orderCancelTransaction', {})
-                reject_tx = result.get('orderRejectTransaction', {})
-                reason = (
-                    cancel_tx.get('reason')
-                    or reject_tx.get('rejectReason')
-                    or 'unknown'
-                )
-                log.error(
-                    f"Entry order NOT filled: {instrument} {side} | "
-                    f"Reason: {reason} | Raw: {result}"
-                )
-                return {'success': False, 'error': reason, 'raw': result}
+        fill_price     = float(fill_tx.get('price', 0))
+        oanda_trade_id = str(fill_tx.get('tradeOpened', {}).get('tradeID', ''))
+        log.info(f'Entry filled: {instrument} {side} {units:.0f} @ {fill_price:.5f} | ID: {oanda_trade_id}')
+        return {'success': True, 'fill_price': fill_price, 'oanda_trade_id': oanda_trade_id, 'raw': result}
 
-            fill_price     = float(fill_tx.get('price', 0))
-            oanda_trade_id = str(fill_tx.get('tradeOpened', {}).get('tradeID', ''))
-            log.info(
-                f"Entry order filled: {instrument} {side} {units:.4f} @ {fill_price:.5f} "
-                f"| TP: {take_profit:.5f} SL: {stop_loss:.5f} | ID: {client_trade_id} "
-                f"| OANDA trade ID: {oanda_trade_id}"
-            )
-            return {'success': True, 'fill_price': fill_price, 'oanda_trade_id': oanda_trade_id, 'raw': result}
-        except Exception as e:
-            log.error(f"Entry order failed {instrument}: {e}")
-            return {'success': False, 'error': str(e)}
-
-    def place_market_order(self,
-                            instrument: str,
-                            side: str,
-                            units: float,
-                            stop_loss: float,
-                            client_trade_id: str,
-                            reason: str = 'emergency') -> Dict:
-        """
-        Emergency market order — used for exits only.
-        Logs cost penalty vs limit order for post-analysis.
-        """
-        log.warning(
-            f"MARKET ORDER (emergency) — {instrument} {side} {units:.4f} | "
-            f"Reason: {reason} | Elevated taker fees apply"
-        )
-
+    def place_market_order(self, instrument: str, side: str, units: float,
+                            stop_loss: float, client_trade_id: str,
+                            reason: str = 'exit') -> Dict:
+        """Emergency market exit."""
+        log.warning(f'MARKET ORDER (exit): {instrument} {side} {units:.0f} | {reason}')
         signed_units = int(round(units)) if side == 'BUY' else -int(round(units))
-        decimals = 3 if 'JPY' in instrument else 5
-
-        order_body = {
-            "order": {
-                "type": "MARKET",
-                "instrument": instrument,
-                "units": str(signed_units),
-                "timeInForce": "FOK",
-                "positionFill": "REDUCE_ONLY",
+        body = {
+            'order': {
+                'type': 'MARKET',
+                'instrument': instrument,
+                'units': str(signed_units),
+                'timeInForce': 'FOK',
+                'positionFill': 'REDUCE_ONLY',
             }
         }
+        url = f'{self.base_url}/v3/accounts/{self.account_id}/orders'
+        result = self._post(url, body)
+        if result is None:
+            return {'success': False, 'error': 'POST failed'}
 
+        fill_tx = result.get('orderFillTransaction', {}) or {}
+        fill_price = float(fill_tx.get('price', 0))
         try:
-            url = f"{self.base_url}/v3/accounts/{self.account_id}/orders"
-            r = requests.post(url, headers=self.headers, json=order_body, timeout=10)
-            r.raise_for_status()
-            result = r.json()
-            fill_tx = result.get('orderFillTransaction', {}) or {}
-            fill_price = float(fill_tx.get('price', 0))
+            realized_pl = (float(fill_tx.get('pl', 0))
+                           + float(fill_tx.get('financing', 0))
+                           - float(fill_tx.get('commission', 0)))
+        except Exception:
             realized_pl = None
-            try:
-                # OANDA includes realized PnL components on fill transactions for closes.
-                pl = float(fill_tx.get('pl', 0.0))
-                financing = float(fill_tx.get('financing', 0.0))
-                commission = float(fill_tx.get('commission', 0.0))
-                realized_pl = pl + financing - commission
-            except Exception:
-                realized_pl = None
-            log.warning(
-                f"Market order filled @ {fill_price:.5f} | "
-                f"Note: taker cost vs limit cost should be analyzed post-session"
-            )
-            return {'success': True, 'fill_price': fill_price, 'realized_pl': realized_pl, 'raw': result}
-        except Exception as e:
-            log.error(f"Market order failed {instrument}: {e}")
-            return {'success': False, 'error': str(e)}
+        return {'success': True, 'fill_price': fill_price, 'realized_pl': realized_pl, 'raw': result}
 
     def cancel_order(self, order_id: str) -> bool:
-        """Cancels an unfilled limit order (e.g. price left zone)."""
-        try:
-            url = f"{self.base_url}/v3/accounts/{self.account_id}/orders/{order_id}/cancel"
-            r = requests.put(url, headers=self.headers, timeout=10)
-            r.raise_for_status()
-            log.info(f"Order {order_id} cancelled — price left zone")
-            return True
-        except Exception as e:
-            log.error(f"Cancel failed for order {order_id}: {e}")
-            return False
+        url = f'{self.base_url}/v3/accounts/{self.account_id}/orders/{order_id}/cancel'
+        result = self._put(url, {})
+        return result is not None
 
     def modify_trade_stop(self, trade_id: str, new_stop: float) -> bool:
-        """Moves stop-loss on an open trade (for trailing stop and break-even)."""
-        try:
-            url = (f"{self.base_url}/v3/accounts/{self.account_id}"
-                   f"/trades/{trade_id}/orders")
-            body = {
-                "stopLoss": {
-                    "price": str(round(new_stop, 5)),
-                    "timeInForce": "GTC"
-                }
-            }
-            r = requests.put(url, headers=self.headers, json=body, timeout=10)
-            r.raise_for_status()
-            log.info(f"Stop moved: trade {trade_id} → {new_stop:.5f}")
+        url = f'{self.base_url}/v3/accounts/{self.account_id}/trades/{trade_id}/orders'
+        result = self._put(url, {'stopLoss': {'price': str(round(new_stop, 5)), 'timeInForce': 'GTC'}})
+        if result is not None:
+            log.info(f'Stop moved: trade {trade_id} → {new_stop:.5f}')
             return True
-        except Exception as e:
-            log.error(f"Stop modify failed trade {trade_id}: {e}")
-            return False
+        return False
 
     def modify_trade_tp(self, trade_id: str, tp_price: float) -> bool:
-        """Sets / updates take-profit on an open trade (green exit LIMIT order)."""
-        try:
-            url = (f"{self.base_url}/v3/accounts/{self.account_id}"
-                   f"/trades/{trade_id}/orders")
-            body = {
-                "takeProfit": {
-                    "price": str(round(tp_price, 5)),
-                    "timeInForce": "GTC"
-                }
-            }
-            r = requests.put(url, headers=self.headers, json=body, timeout=10)
-            r.raise_for_status()
-            log.info(f"TP set: trade {trade_id} → {tp_price:.5f}")
+        url = f'{self.base_url}/v3/accounts/{self.account_id}/trades/{trade_id}/orders'
+        result = self._put(url, {'takeProfit': {'price': str(round(tp_price, 5)), 'timeInForce': 'GTC'}})
+        if result is not None:
+            log.info(f'TP set: trade {trade_id} → {tp_price:.5f}')
             return True
-        except Exception as e:
-            log.error(f"TP modify failed trade {trade_id}: {e}")
-            return False
+        return False
 
-    def close_trade_partial(self,
-                             trade_id: str,
-                             units: float) -> Dict:
-        """Partially closes an open trade (for partial take-profit)."""
+    def close_trade_partial(self, trade_id: str, units: float) -> Dict:
+        url = f'{self.base_url}/v3/accounts/{self.account_id}/trades/{trade_id}/close'
+        result = self._put(url, {'units': str(units)})
+        if result is None:
+            return {'success': False, 'error': 'PUT failed'}
+        fill_tx = result.get('orderFillTransaction', {}) or {}
+        fill = float(fill_tx.get('price', 0))
         try:
-            url = (f"{self.base_url}/v3/accounts/{self.account_id}"
-                   f"/trades/{trade_id}/close")
-            body = {"units": str(units)}
-            r = requests.put(url, headers=self.headers, json=body, timeout=10)
-            r.raise_for_status()
-            result = r.json()
-            fill_tx = result.get('orderFillTransaction', {}) or {}
-            fill = float(fill_tx.get('price', 0))
+            realized_pl = (float(fill_tx.get('pl', 0))
+                           + float(fill_tx.get('financing', 0))
+                           - float(fill_tx.get('commission', 0)))
+        except Exception:
             realized_pl = None
-            try:
-                pl = float(fill_tx.get('pl', 0.0))
-                financing = float(fill_tx.get('financing', 0.0))
-                commission = float(fill_tx.get('commission', 0.0))
-                realized_pl = pl + financing - commission
-            except Exception:
-                realized_pl = None
-            log.info(f"Partial close: trade {trade_id} | {units:.4f} units @ {fill:.5f}")
-            return {'success': True, 'fill_price': fill, 'realized_pl': realized_pl, 'raw': result}
-        except Exception as e:
-            log.error(f"Partial close failed trade {trade_id}: {e}")
-            return {'success': False, 'error': str(e)}
+        log.info(f'Partial close: trade {trade_id} | {units:.0f} units @ {fill:.5f}')
+        return {'success': True, 'fill_price': fill, 'realized_pl': realized_pl, 'raw': result}
 
     def check_order_filled(self, order_id: str) -> Dict:
-        """Polls a pending limit order to see if it filled."""
-        try:
-            url = f"{self.base_url}/v3/accounts/{self.account_id}/orders/{order_id}"
-            r = requests.get(url, headers=self.headers, timeout=5)
-            r.raise_for_status()
-            order = r.json().get('order', {})
-            state = order.get('state', 'UNKNOWN')
-            return {
-                'filled': state == 'FILLED',
-                'cancelled': state == 'CANCELLED',
-                'pending': state == 'PENDING',
-                'state': state
-            }
-        except Exception as e:
-            log.error(f"Order status check failed {order_id}: {e}")
+        url = f'{self.base_url}/v3/accounts/{self.account_id}/orders/{order_id}'
+        data = self._get(url, timeout=5)
+        if not data:
             return {'filled': False, 'state': 'ERROR'}
+        state = data.get('order', {}).get('state', 'UNKNOWN')
+        return {'filled': state == 'FILLED', 'cancelled': state == 'CANCELLED',
+                'pending': state == 'PENDING', 'state': state}
