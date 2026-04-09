@@ -1,0 +1,350 @@
+# ============================================================
+# MR. SCROOGE — UNIVERSE SCREENER (FOREX)
+# Scans OANDA forex pairs every 30 minutes and returns
+# the list of instruments that have viable boxes today.
+#
+# Viability = box exists + box is wide enough to cover spread
+#             + session hasn't consumed too much ATR yet
+#             + we're not in a weekend/holiday gap situation
+#
+# Screener runs at boot and every 30 min.
+# Main loop only processes instruments that pass screening.
+# ============================================================
+
+import logging
+import pandas as pd
+from dataclasses import dataclass
+from typing import List, Optional
+from datetime import datetime, timezone
+
+log = logging.getLogger('mr-scrooge.universe_screener')
+
+
+# ============================================================
+# SESSION WINDOWS
+# Major forex sessions with their UTC open/close hours
+# and the pairs that are active / liquid in that session.
+# Scrooge only scans pairs whose session is currently open.
+# ============================================================
+
+SESSION_WINDOWS = [
+    {
+        'name':      'Sydney',
+        'open_utc':  21,    # 9PM UTC
+        'close_utc': 6,     # 6AM UTC (crosses midnight)
+        'pairs': [
+            'AUD_USD', 'NZD_USD', 'AUD_NZD', 'AUD_CAD',
+            'AUD_JPY', 'NZD_JPY',
+        ]
+    },
+    {
+        'name':      'Tokyo',
+        'open_utc':  0,     # Midnight UTC
+        'close_utc': 9,     # 9AM UTC
+        'pairs': [
+            'USD_JPY', 'EUR_JPY', 'GBP_JPY', 'AUD_JPY',
+            'CAD_JPY', 'CHF_JPY', 'NZD_JPY',
+            'AUD_USD', 'NZD_USD', 'AUD_NZD',
+        ]
+    },
+    {
+        'name':      'London',
+        'open_utc':  7,     # 7AM UTC
+        'close_utc': 16,    # 4PM UTC
+        'pairs': [
+            'EUR_USD', 'GBP_USD', 'EUR_GBP',
+            'EUR_JPY', 'GBP_JPY', 'EUR_CHF', 'GBP_CHF',
+            'EUR_CAD', 'EUR_AUD', 'EUR_NZD',
+            'GBP_CAD', 'GBP_AUD', 'GBP_NZD',
+            'USD_CHF', 'USD_JPY', 'AUD_CHF',
+        ]
+    },
+    {
+        'name':      'New York',
+        'open_utc':  13,    # 1PM UTC
+        'close_utc': 22,    # 10PM UTC
+        'pairs': [
+            'EUR_USD', 'GBP_USD', 'USD_JPY', 'USD_CAD',
+            'USD_CHF', 'AUD_USD', 'NZD_USD',
+            'EUR_JPY', 'GBP_JPY', 'EUR_GBP',
+            'CAD_JPY', 'EUR_CAD', 'GBP_CAD',
+        ]
+    },
+]
+
+
+def get_active_sessions(utc_hour: int) -> list:
+    """Returns list of session dicts that are currently open."""
+    active = []
+    for session in SESSION_WINDOWS:
+        o = session['open_utc']
+        c = session['close_utc']
+        if o > c:  # crosses midnight (e.g. Sydney 21-6)
+            if utc_hour >= o or utc_hour < c:
+                active.append(session)
+        else:
+            if o <= utc_hour < c:
+                active.append(session)
+    return active
+
+
+def get_session_pairs(utc_hour: int) -> list:
+    """
+    Returns deduplicated list of pairs for all currently open sessions.
+    Only includes pairs that are also in CANDIDATE_PAIRS.
+    Falls back to full CANDIDATE_PAIRS if no session matched (shouldn't happen).
+    """
+    seen = set()
+    pairs = []
+    for session in get_active_sessions(utc_hour):
+        for p in session['pairs']:
+            if p not in seen and p in CANDIDATE_PAIRS:
+                seen.add(p)
+                pairs.append(p)
+    return pairs if pairs else CANDIDATE_PAIRS
+
+
+# Instruments to consider — 24 pairs across majors, minors, and crosses
+CANDIDATE_PAIRS = [
+    # Dollar majors
+    'EUR_USD', 'GBP_USD', 'USD_JPY', 'AUD_USD',
+    'USD_CHF', 'USD_CAD', 'NZD_USD', 'USD_MXN',
+    # JPY crosses — active Asian and London overlap
+    'EUR_JPY', 'GBP_JPY', 'AUD_JPY', 'CAD_JPY', 'CHF_JPY', 'NZD_JPY',
+    # EUR crosses
+    'EUR_GBP', 'EUR_CAD', 'EUR_AUD', 'EUR_NZD', 'EUR_CHF',
+    # GBP crosses
+    'GBP_CAD', 'GBP_AUD', 'GBP_NZD', 'GBP_CHF',
+    # Commodity crosses
+    'AUD_CAD', 'AUD_NZD', 'AUD_CHF',
+]
+
+# Minimum box requirements (pips)
+# Minimum box requirements (pips)
+# Calibrated 2026-03-04: each pair minimum set so OTR <= 15% (acceptable tier)
+# Formula: min_box = (baseline_spread_pips x 2) / 0.15, rounded to nearest 5
+# AUD_CAD left at 30p — only consistent winner in first 10 days, do not restrict
+# Rule: if a pair keeps losing at spread level in future periods, expand its box further
+MIN_BOX_PIPS = {
+    # Dollar majors
+    'EUR_USD': 35, 'GBP_USD': 40, 'USD_JPY': 30, 'AUD_USD': 40,
+    'USD_CHF': 40, 'USD_CAD': 45, 'NZD_USD': 45, 'USD_MXN': 200,
+    # JPY crosses
+    'EUR_JPY': 40, 'GBP_JPY': 60, 'AUD_JPY': 40,
+    'CAD_JPY': 40, 'CHF_JPY': 45, 'NZD_JPY': 45,
+    # EUR crosses
+    'EUR_GBP': 35, 'EUR_CAD': 60, 'EUR_AUD': 60,
+    'EUR_NZD': 85, 'EUR_CHF': 45,
+    # GBP crosses — widest spreads, need the most room
+    'GBP_CAD': 85, 'GBP_AUD': 85, 'GBP_NZD': 110, 'GBP_CHF': 60,
+    # Commodity crosses
+    'AUD_CAD': 30, 'AUD_NZD': 60, 'AUD_CHF': 40,
+}
+DEFAULT_MIN_BOX_PIPS = 30
+
+# ATR minimum — box must be at least this many ATR multiples
+MIN_BOX_ATR_MULTIPLE = 0.5   # Box must be at least 50% of daily ATR
+
+# Maximum ATR consumed at screening time
+# If too much ATR is already consumed, box may not have room
+MAX_ATR_CONSUMED_AT_SCAN = 3.00   # Skip if >300% consumed (very loose — forex is 24h, not 6.5h like stocks.
+                                   # Pairs routinely consume 100-200% of ATR across sessions.
+                                   # The real filters are OTR, RR, and pitchfork gates in signal_engine.
+                                   # Was 0.85 — blocked every pair by NY afternoon.)
+
+# Pip sizes (JPY pairs = 0.01; all others = 0.0001)
+PIP_SIZES = {
+    'EUR_USD': 0.0001, 'GBP_USD': 0.0001, 'USD_JPY': 0.01,
+    'AUD_USD': 0.0001, 'USD_CHF': 0.0001, 'USD_CAD': 0.0001,
+    'NZD_USD': 0.0001, 'USD_MXN': 0.0001,
+    'EUR_JPY': 0.01,   'GBP_JPY': 0.01,   'AUD_JPY': 0.01,
+    'CAD_JPY': 0.01,   'CHF_JPY': 0.01,   'NZD_JPY': 0.01,
+    'EUR_GBP': 0.0001, 'EUR_CAD': 0.0001, 'EUR_AUD': 0.0001,
+    'EUR_NZD': 0.0001, 'EUR_CHF': 0.0001,
+    'GBP_CAD': 0.0001, 'GBP_AUD': 0.0001, 'GBP_NZD': 0.0001,
+    'GBP_CHF': 0.0001,
+    'AUD_CAD': 0.0001, 'AUD_NZD': 0.0001, 'AUD_CHF': 0.0001,
+}
+
+
+@dataclass
+class ScreenResult:
+    instrument: str
+    viable: bool
+    pdh: float
+    pdl: float
+    box_range_pips: float
+    half_box_pips: float
+    daily_atr_pips: float
+    atr_consumed_pct: float
+    current_spread_pips: float
+    otr_ratio: float
+    rejection_reason: Optional[str]
+    last_checked: str
+
+
+class ForexUniverseScreener:
+    """
+    Screens OANDA forex pairs for viable box setups.
+
+    Called at:
+    - Boot (before main loop starts)
+    - Every 30 minutes during session
+    - After box breaks (to evaluate alternative box)
+
+    Returns only instruments worth processing each cycle.
+    Instruments that fail screening are skipped entirely —
+    no zone detection, no signal evaluation, nothing.
+    This keeps the main loop fast.
+    """
+
+    def __init__(self, oanda_client, fee_calculator):
+        self.client = oanda_client
+        self.fee_calc = fee_calculator
+        self._last_results: List[ScreenResult] = []
+
+    def screen_all(self, pairs: list = None) -> List[ScreenResult]:
+        """
+        Screens candidate pairs for the current session.
+        If pairs is provided, only screens those (session-filtered list).
+        Returns full list of ScreenResult objects.
+        Main loop should filter to viable=True only.
+        """
+        to_scan = pairs if pairs else CANDIDATE_PAIRS
+        results = []
+        for instrument in to_scan:
+            try:
+                result = self.screen_one(instrument)
+                results.append(result)
+                status = 'VIABLE' if result.viable else f'SKIP ({result.rejection_reason})'
+                log.info(f"Screen {instrument}: {status}")
+            except Exception as e:
+                log.error(f"Screen failed {instrument}: {e}")
+                results.append(ScreenResult(
+                    instrument=instrument,
+                    viable=False,
+                    pdh=0, pdl=0,
+                    box_range_pips=0, half_box_pips=0,
+                    daily_atr_pips=0, atr_consumed_pct=0,
+                    current_spread_pips=0, otr_ratio=1.0,
+                    rejection_reason=f'Screen error: {e}',
+                    last_checked=datetime.now(timezone.utc).isoformat()
+                ))
+
+        self._last_results = results
+        viable_count = sum(1 for r in results if r.viable)
+        log.info(f"Universe scan complete: {viable_count}/{len(results)} viable")
+        return results
+
+    def get_viable(self) -> List[str]:
+        """Returns just the instrument names that are viable."""
+        return [r.instrument for r in self._last_results if r.viable]
+
+    def screen_one(self, instrument: str) -> ScreenResult:
+        """
+        Full viability check for one instrument.
+        """
+        pip = PIP_SIZES.get(instrument, 0.0001)
+        min_pips = MIN_BOX_PIPS.get(instrument, DEFAULT_MIN_BOX_PIPS)
+
+        # Get daily bars for PDH/PDL and ATR
+        daily_bars = self.client.get_daily_bars(instrument, count=20)
+        if daily_bars is None or len(daily_bars) < 2:
+            return self._reject(instrument, 'No daily bar data')
+
+        # Prior day = second-to-last bar (last bar is today, still forming)
+        prior_day = daily_bars.iloc[-2]
+        today     = daily_bars.iloc[-1]
+
+        pdh = prior_day['high']
+        pdl = prior_day['low']
+        box_range = pdh - pdl
+        half_box  = box_range / 2
+        box_pips  = box_range / pip
+
+        # ATR (14-day simple average of daily ranges)
+        ranges = (daily_bars['high'] - daily_bars['low']).tail(14)
+        daily_atr = ranges.mean()
+        atr_pips  = daily_atr / pip
+
+        # Current price
+        current_price = today['close']
+
+        # How much of today's ATR has been consumed so far?
+        today_range = today['high'] - today['low']
+        atr_consumed = today_range / daily_atr if daily_atr > 0 else 0
+
+        # Live spread
+        spread = self.client.get_live_spread(instrument) or (pip * 1.5)
+        spread_pips = spread / pip
+
+        # OTR check
+        total_overhead = spread * 2  # Entry + exit spread
+        otr = total_overhead / half_box if half_box > 0 else 1.0
+
+        # --- VIABILITY GATES ---
+
+        if box_pips < min_pips:
+            return self._reject(
+                instrument,
+                f'Box too narrow: {box_pips:.1f} pips (min {min_pips})',
+                pdh, pdl, box_pips, half_box/pip, atr_pips,
+                atr_consumed, spread_pips, otr
+            )
+
+        if box_range < daily_atr * MIN_BOX_ATR_MULTIPLE:
+            return self._reject(
+                instrument,
+                f'Box too small vs ATR: {box_range/daily_atr:.1%} of ATR',
+                pdh, pdl, box_pips, half_box/pip, atr_pips,
+                atr_consumed, spread_pips, otr
+            )
+
+        if atr_consumed > MAX_ATR_CONSUMED_AT_SCAN:
+            return self._reject(
+                instrument,
+                f'Too much ATR consumed: {atr_consumed:.0%} — little room left',
+                pdh, pdl, box_pips, half_box/pip, atr_pips,
+                atr_consumed, spread_pips, otr
+            )
+
+        if otr > 0.30:
+            return self._reject(
+                instrument,
+                f'OTR too high: {otr:.1%} — spread eats too much of box',
+                pdh, pdl, box_pips, half_box/pip, atr_pips,
+                atr_consumed, spread_pips, otr
+            )
+
+        # Passed all gates
+        return ScreenResult(
+            instrument=instrument,
+            viable=True,
+            pdh=pdh,
+            pdl=pdl,
+            box_range_pips=box_pips,
+            half_box_pips=half_box / pip,
+            daily_atr_pips=atr_pips,
+            atr_consumed_pct=atr_consumed,
+            current_spread_pips=spread_pips,
+            otr_ratio=otr,
+            rejection_reason=None,
+            last_checked=datetime.now(timezone.utc).isoformat()
+        )
+
+    def _reject(self, instrument, reason,
+                 pdh=0, pdl=0, box_pips=0, half_pips=0,
+                 atr_pips=0, atr_consumed=0, spread_pips=0, otr=1.0):
+        return ScreenResult(
+            instrument=instrument,
+            viable=False,
+            pdh=pdh, pdl=pdl,
+            box_range_pips=box_pips,
+            half_box_pips=half_pips,
+            daily_atr_pips=atr_pips,
+            atr_consumed_pct=atr_consumed,
+            current_spread_pips=spread_pips,
+            otr_ratio=otr,
+            rejection_reason=reason,
+            last_checked=datetime.now(timezone.utc).isoformat()
+        )

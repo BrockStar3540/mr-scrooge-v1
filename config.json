@@ -1,0 +1,8 @@
+{
+  "globals": {
+    "box_timeframe": "daily",
+    "sl_pips": 10,
+    "tp1_pips": 10,
+    "tp2_pips": 30
+  }
+}

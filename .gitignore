@@ -1,0 +1,22 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# Backups
+*.bak
+*.bak.*
+
+# Logs (rotated logs managed by logrotate)
+logs/
+
+# Runtime data
+data/*.jsonl
+data/audit/*.json
+harvester/harvester_state.json
+
+# Secrets
+.env
+
+# OS
+.DS_Store
