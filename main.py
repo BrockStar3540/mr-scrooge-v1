@@ -500,6 +500,7 @@ def _update_sessions(ctx: dict, now: datetime) -> bool:
                 log.info(f'Box initialized (session open): {symbol}')
 
     ctx['active_instruments'] = new_instruments
+    ctx["_last_screen"] = _serialize_screen(screen_results)
     ctx['last_rescan'] = now
     log.info(f'Active instruments: {", ".join(new_instruments) if new_instruments else "none viable yet"}')
     return True
