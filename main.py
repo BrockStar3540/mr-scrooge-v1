@@ -1751,7 +1751,49 @@ def main():
                 log.error(f'{symbol}: Unhandled error — {e}', exc_info=True)
 
         # ── Ranking: fire best-scored entry candidate ──
-        _candidates = [c for c in ctx.pop('_cycle_entry_candidates', []) if c['signal'].score > 0]
+        # Phase 3A safety gates: score threshold, spread hard-block, stale trigger, freshness
+        MIN_ENTRY_SCORE = 20
+        SPREAD_HARD_BLOCK = 3.0
+        STALE_TRIGGER_ATR_FRAC = 0.3
+        _raw_candidates = ctx.pop('_cycle_entry_candidates', [])
+        _candidates = []
+        for _c in _raw_candidates:
+            _sig = _c['signal']
+            _sym = _c['symbol']
+            _cp  = _c['current_price']
+            _spread = _c.get('live_spread', 0)
+            _hbox = _c.get('half_box', 0)
+            # Score gate
+            if _sig.score < MIN_ENTRY_SCORE:
+                decision_log.info(f'{_sym}: SCORE_BLOCKED score={_sig.score} < {MIN_ENTRY_SCORE}')
+                ctx.setdefault('_blockers', {})[_sym] = {'type': 'score_blocked', 'message': f'Score {_sig.score} < {MIN_ENTRY_SCORE}'}
+                continue
+            # Spread hard-block (spread_ratio = live_spread / half_box as proxy)
+            _spread_ratio = (_spread / _hbox) if _hbox > 0 else 0
+            if _spread_ratio > SPREAD_HARD_BLOCK:
+                decision_log.info(f'{_sym}: SPREAD_BLOCKED ratio={_spread_ratio:.1f} > {SPREAD_HARD_BLOCK}')
+                ctx.setdefault('_blockers', {})[_sym] = {'type': 'spread_blocked', 'message': f'Spread ratio {_spread_ratio:.1f} > {SPREAD_HARD_BLOCK}'}
+                continue
+            # Trigger freshness — price already past the entry level
+            if _sig.action == 'ENTER_LONG' and _cp >= _sig.entry_price:
+                decision_log.info(f'{_sym}: TRIGGER_STALE price {_cp:.5f} already past long trigger {_sig.entry_price:.5f}')
+                ctx.setdefault('_blockers', {})[_sym] = {'type': 'trigger_stale', 'message': f'Price already past trigger'}
+                continue
+            if _sig.action == 'ENTER_SHORT' and _cp <= _sig.entry_price:
+                decision_log.info(f'{_sym}: TRIGGER_STALE price {_cp:.5f} already past short trigger {_sig.entry_price:.5f}')
+                ctx.setdefault('_blockers', {})[_sym] = {'type': 'trigger_stale', 'message': f'Price already past trigger'}
+                continue
+            # Stale trigger distance — too far from current price
+            _pip = 0.01 if 'JPY' in _sym else 0.0001
+            _bars = _c.get('bars_5m')
+            if _bars is not None and len(_bars) >= 14:
+                _atr_5m = _bars['high'].iloc[-14:].sub(_bars['low'].iloc[-14:]).mean()
+                _trig_dist = abs(_cp - _sig.entry_price)
+                if _trig_dist > STALE_TRIGGER_ATR_FRAC * _atr_5m:
+                    decision_log.info(f'{_sym}: TRIGGER_FAR dist={_trig_dist/_pip:.1f}p > {STALE_TRIGGER_ATR_FRAC}*ATR5m={_atr_5m/_pip:.1f}p')
+                    ctx.setdefault('_blockers', {})[_sym] = {'type': 'trigger_far', 'message': f'Trigger too far ({_trig_dist/_pip:.1f}p)'}
+                    continue
+            _candidates.append(_c)
         if _candidates:
             _candidates.sort(key=lambda c: c['signal'].score, reverse=True)
             ctx['_firing_symbols'] = {c['symbol'] for c in _candidates}
