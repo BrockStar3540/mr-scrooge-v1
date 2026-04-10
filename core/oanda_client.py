@@ -671,12 +671,18 @@ class OANDAClient:
             result = r.json()
             oid = result.get('orderCreateTransaction', {}).get('id', '')
             fill_tx = result.get('orderFillTransaction')
+            cancel_tx = result.get('orderCancelTransaction')
             if fill_tx:
                 fp = float(fill_tx.get('price', 0))
                 rpl = float(fill_tx.get('pl', 0)) + float(fill_tx.get('financing', 0))
                 log.info(f"Limit close IMMEDIATE fill: {instrument} {close_side} {units:.0f} @ {fp:.5f}")
                 return {'success': True, 'filled': True, 'order_id': oid,
                         'fill_price': fp, 'realized_pl': rpl, 'raw': result}
+            if cancel_tx:
+                cancel_reason = cancel_tx.get('reason', 'UNKNOWN')
+                no_position = cancel_reason == 'NO_POSITION_TO_REDUCE'
+                log.warning(f"Limit close CANCELLED immediately: {instrument} {close_side} {units:.0f} | reason={cancel_reason}")
+                return {'success': False, 'error': cancel_reason, 'no_position': no_position, 'raw': result}
             log.info(f"Limit close placed: {instrument} {close_side} {units:.0f} @ {price:.{decimals}f} | order {oid}")
             return {'success': True, 'filled': False, 'order_id': oid, 'raw': result}
         except Exception as e:

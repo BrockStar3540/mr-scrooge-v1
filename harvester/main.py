@@ -46,6 +46,7 @@ from dotenv import load_dotenv
 load_dotenv(os.path.join(SCROOGE_DIR, '.env'))
 
 from core.oanda_client import OANDAClient
+from core.trade_state import TradeCoordinator
 
 
 # ============================================================
@@ -231,7 +232,7 @@ def compute_tier_pips(
 # ============================================================
 
 def process_trade(trade: Dict, state: Dict, oanda: OANDAClient,
-                  equity: float, cfg: dict) -> bool:
+                  equity: float, cfg: dict, coord: TradeCoordinator = None) -> bool:
     oanda_id  = str(trade.get('id', ''))
     client_id = (
         trade.get('tradeClientExtensions', {}).get('id', '')
@@ -244,6 +245,13 @@ def process_trade(trade: Dict, state: Dict, oanda: OANDAClient,
     current_units_raw = float(trade.get('currentUnits', 0))
     current_units     = abs(current_units_raw)
     if current_units < 1:
+        return False
+
+    # Alive gate: skip if coordination file says trade is dead
+    if coord and not coord.is_trade_alive(oanda_id):
+        # Trade may have been closed — if we still track it, clean up
+        if oanda_id in state:
+            log.info(f'Harvester: {client_id} marked dead in coordination — skipping')
         return False
 
     direction   = 'long' if current_units_raw > 0 else 'short'
@@ -280,6 +288,12 @@ def process_trade(trade: Dict, state: Dict, oanda: OANDAClient,
             f'Tracking: {client_id} | {trade.get("instrument")} {direction} '
             f'{current_units:.0f} units @ {entry_price:.5f}'
         )
+        # Seed coordination file if bot hasn't registered this trade yet
+        if coord and not coord.get_trade(oanda_id):
+            coord.register_trade(
+                oanda_trade_id=oanda_id, client_id=client_id,
+                sl=current_sl, actor='harvester',
+            )
         save_state(state)
         return True
 
@@ -317,6 +331,14 @@ def process_trade(trade: Dict, state: Dict, oanda: OANDAClient,
                     ts['current_sl'] = pending['new_sl']
                     log.info(f'SL advanced: {client_id} -> {pending["new_sl"]:.5f}')
             ts['tiers_hit'].append(i)
+            if coord:
+                _new_owner = 'ratchet' if len(ts['tiers_hit']) >= len(cfg.get('close_pcts', [0.25, 0.25, 0.25])) else 'harvester'
+                coord.update_trade(oanda_id,
+                    tiers_hit=list(ts['tiers_hit']),
+                    sl_owner=_new_owner,
+                    current_sl=ts.get('current_sl', 0),
+                    last_updated_by='harvester',
+                )
             del ts['pending_limit_close']
             save_state(state)
             return True
@@ -425,6 +447,15 @@ def process_trade(trade: Dict, state: Dict, oanda: OANDAClient,
                     ts['current_sl'] = new_sl
                     log.info(f'SL advanced: {client_id} -> {new_sl:.5f}')
             ts['tiers_hit'].append(i)
+            # Update coordination file: tier progress + SL ownership
+            if coord:
+                _new_owner = 'ratchet' if len(ts['tiers_hit']) >= len(close_pcts) else 'harvester'
+                coord.update_trade(oanda_id,
+                    tiers_hit=list(ts['tiers_hit']),
+                    sl_owner=_new_owner,
+                    current_sl=ts.get('current_sl', 0),
+                    last_updated_by='harvester',
+                )
             current_units -= units_to_close
             state_changed = True
 
@@ -443,6 +474,15 @@ def process_trade(trade: Dict, state: Dict, oanda: OANDAClient,
                     ts['current_sl'] = new_sl
                     log.info(f'SL advanced: {client_id} -> {new_sl:.5f}')
             ts['tiers_hit'].append(i)
+            # Update coordination file: tier progress + SL ownership
+            if coord:
+                _new_owner = 'ratchet' if len(ts['tiers_hit']) >= len(close_pcts) else 'harvester'
+                coord.update_trade(oanda_id,
+                    tiers_hit=list(ts['tiers_hit']),
+                    sl_owner=_new_owner,
+                    current_sl=ts.get('current_sl', 0),
+                    last_updated_by='harvester',
+                )
             current_units -= units_to_close
             state_changed = True
 
@@ -509,7 +549,7 @@ def process_trade(trade: Dict, state: Dict, oanda: OANDAClient,
 # CLEANUP
 # ============================================================
 
-def cleanup_closed_trades(state: Dict, live_ids: set):
+def cleanup_closed_trades(state: Dict, live_ids: set, coord: TradeCoordinator = None):
     to_remove = [oid for oid in state if oid not in live_ids]
     for oid in to_remove:
         ts = state[oid]
@@ -517,6 +557,8 @@ def cleanup_closed_trades(state: Dict, live_ids: set):
             f'Trade closed: {ts.get("client_id", oid)} | '
             f'tiers_hit={ts.get("tiers_hit", [])}'
         )
+        if coord:
+            coord.mark_dead(oid, actor='harvester')
         del state[oid]
     if to_remove:
         save_state(state)
@@ -538,6 +580,10 @@ def main():
         save_config(DEFAULT_CONFIG)
 
     oanda = OANDAClient()
+    coord = TradeCoordinator(
+        os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'data')
+    )
+    log.info(f'TradeCoordinator initialized: {coord._path}')
     state = load_state()
     log.info(f'Loaded state: {len(state)} known trade(s)')
 
@@ -549,7 +595,7 @@ def main():
 
             trades   = oanda.get_open_trades()
             live_ids = {str(t.get('id', '')) for t in trades}
-            cleanup_closed_trades(state, live_ids)
+            cleanup_closed_trades(state, live_ids, coord)
 
             scrooge_trades = [
                 t for t in trades
@@ -563,7 +609,7 @@ def main():
                 log.info(f'Monitoring {len(scrooge_trades)} Scrooge trade(s) | equity=${equity:.2f}')
                 for trade in scrooge_trades:
                     try:
-                        process_trade(trade, state, oanda, equity, cfg)
+                        process_trade(trade, state, oanda, equity, cfg, coord)
                     except Exception as e:
                         cid = (
                             trade.get('tradeClientExtensions', {}).get('id', '')

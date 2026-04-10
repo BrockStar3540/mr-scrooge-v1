@@ -45,6 +45,7 @@ from dotenv import load_dotenv
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from core.oanda_client import OANDAClient
+from core.trade_state import TradeCoordinator
 from core.fee_calculator import OANDAFeeCalculator
 from core.execution_router import OANDAExecutionRouter
 from gates import (
@@ -312,17 +313,27 @@ def _manage_sl_limit(pos, symbol, current_price, bars_5m, oanda, stop_moved=Fals
         return  # Already have one, nothing to do
 
     # Step 4: Place new limit if within trigger_buffer
+    # Use coordination file SL if available (fresher than 5-min stale pos.current_stop)
+    _auth_sl = pos.current_stop
+    try:
+        _tc = globals().get('_fast_loop_ctx', {}).get('trade_coord') or None
+        if _tc and pos.oanda_trade_id:
+            _coord_rec = _tc.get_trade(pos.oanda_trade_id)
+            if _coord_rec and _coord_rec.get('current_sl', 0) > 0:
+                _auth_sl = _coord_rec['current_sl']
+    except Exception:
+        pass
     if pos.direction == 'long':
-        dist_to_stop = current_price - pos.current_stop
+        dist_to_stop = current_price - _auth_sl
         if dist_to_stop > trigger_buffer:
             return
-        limit_price = pos.current_stop + limit_offset
+        limit_price = _auth_sl + limit_offset
         close_side  = 'SELL'
     else:
-        dist_to_stop = pos.current_stop - current_price
+        dist_to_stop = _auth_sl - current_price
         if dist_to_stop > trigger_buffer:
             return
-        limit_price = pos.current_stop - limit_offset
+        limit_price = _auth_sl - limit_offset
         close_side  = 'BUY'
 
     if _is_fast_market(bars_5m, fast_mult):
@@ -333,7 +344,11 @@ def _manage_sl_limit(pos, symbol, current_price, bars_5m, oanda, stop_moved=Fals
     pos.sl_limit_attempted += 1
 
     if not result.get('success'):
-        log.warning(f'{symbol} {pos.trade_id}: SL limit placement failed — OANDA native SL is backstop')
+        if result.get('no_position'):
+            log.warning(f'{symbol} {pos.trade_id}: SL limit — NO_POSITION_TO_REDUCE, trade closed externally (harvester?)')
+            pos.sl_limit_filled = True  # Prevent further SL limit attempts on this dead position
+        else:
+            log.warning(f'{symbol} {pos.trade_id}: SL limit placement failed — OANDA native SL is backstop')
         return
 
     if result.get('filled'):
@@ -633,6 +648,12 @@ def boot():
     regime  = RegimeSupervisor(
         log_path=os.path.join(_agent_dir, 'data', 'regime-protests.jsonl')
     )
+    trade_coord = TradeCoordinator(
+        os.path.join(_agent_dir, 'data')
+    )
+    trade_coord.cleanup_dead()
+    log.info('TradeCoordinator initialized')
+
     quality = TradeQualityTracker(
         log_path=os.path.join(_agent_dir, 'data', 'quality-trades.jsonl')
     )
@@ -665,6 +686,7 @@ def boot():
         'regime':         regime,
         'quality':        quality,
         'entry_context':  entry_context,
+        'trade_coord':   trade_coord,
     }
 
 # ============================================================
@@ -825,6 +847,15 @@ def process_instrument(symbol: str, ctx: dict) -> Optional[dict]:
                     if _cu > 0 and _cu != pos.remaining_quantity:
                         pos.remaining_quantity = _cu
                     break
+        # Sync harvester tier state → ratchet flags via coordination file
+        _tc = ctx.get('trade_coord')
+        if _tc and pos.oanda_trade_id:
+            _coord = _tc.get_trade(pos.oanda_trade_id)
+            if _coord:
+                if 0 in _coord.get('tiers_hit', []) and not pos.partial_1_taken:
+                    pos.partial_1_taken = True
+                    pos.break_even_achieved = True
+                    log.info(f'{symbol} {pos.trade_id}: Harvester T1 via coordination — partial_1_taken=True')
         mgmt = trade_manager.manage_position(
             pos.trade_id, current_price, bars_5m, bars_1h, minutes_in_trade,
             zone_map=zone_map,
@@ -927,12 +958,23 @@ def process_instrument(symbol: str, ctx: dict) -> Optional[dict]:
                 exit_type = 'BE-stop' if is_be_stop else ('Time-exit' if is_time_exit else 'Stop-hit')
                 decision_log.info(f'{symbol}: {exit_type} cooldown set — {cooldown_mins}min')
         elif action == 'move_stop':
-            router.move_stop(
-                pos.trade_id,
-                pos.oanda_trade_id,
-                mgmt.get('price', pos.current_stop),
-                mgmt.get('reason', 'manager')
-            )
+            # SL ownership: only push to OANDA if ratchet owns the SL
+            _tc = ctx.get('trade_coord')
+            _coord_sl = _tc.get_trade(pos.oanda_trade_id) if _tc and pos.oanda_trade_id else None
+            if _coord_sl and _coord_sl.get('sl_owner') == 'harvester':
+                log.debug(f'{symbol} {pos.trade_id}: SL move skipped — harvester owns SL')
+            else:
+                router.move_stop(
+                    pos.trade_id,
+                    pos.oanda_trade_id,
+                    mgmt.get('price', pos.current_stop),
+                    mgmt.get('reason', 'manager')
+                )
+                if _tc and pos.oanda_trade_id:
+                    _tc.update_trade(
+                        pos.oanda_trade_id, current_sl=mgmt.get('price', pos.current_stop),
+                        last_updated_by='ratchet',
+                    )
             _manage_sl_limit(pos, symbol, current_price, bars_5m, oanda, stop_moved=True)
             continue
         elif action == 'green_exit':
@@ -1345,6 +1387,12 @@ def _fire_entry_candidate(cand: dict, ctx: dict):
             atr=zone_map.daily_box.ATR,
             oanda_trade_id=result.get('oanda_trade_id', '')
         )
+        # Register in coordination file for harvester/SL-limit sync
+        if _oanda_tid:
+            ctx['trade_coord'].register_trade(
+                oanda_trade_id=_oanda_tid, client_id=trade_id,
+                sl=signal.stop_price, actor='bot',
+            )
         ctx['quality'].open_trade(
             trade_id=trade_id, symbol=symbol,
             direction=direction.lower().replace('buy', 'long').replace('sell', 'short'),
@@ -1488,6 +1536,11 @@ def _fast_loop_body(ctx: dict):
                 continue
             current_price = (px.get('bid', 0) + px.get('ask', 0)) / 2
             bars_5m = _cached_bars.get(pos.symbol)
+            # Skip dead positions (harvester may have closed them)
+            globals()['_fast_loop_ctx'] = ctx
+            _tc = ctx.get('trade_coord')
+            if _tc and pos.oanda_trade_id and not _tc.is_trade_alive(pos.oanda_trade_id):
+                continue
             _manage_sl_limit(pos, pos.symbol, current_price, bars_5m, oanda, stop_moved=False)
 
 
@@ -1609,6 +1662,8 @@ def main():
                 f'OANDA NATIVE CLOSE detected: {pos.trade_id} | {pos.symbol} '
                 f'{pos.direction} | OANDA closed between cycles (native SL/TP)'
             )
+            if pos.oanda_trade_id:
+                ctx['trade_coord'].mark_dead(pos.oanda_trade_id, actor='bot')
             # Exit price is not available in vanished-trade reconciliation path.
             # Use entry price to avoid bogus extreme PnL from a zero price placeholder.
             ctx['trade_manager'].close_position(
