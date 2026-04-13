@@ -56,19 +56,31 @@ class RegimeSupervisor:
     # Exponential decay half-life for rejection signals — a touch 8h ago counts 50% of now
     _DECAY_HALF_LIFE_HOURS = 8.0
 
-    # Currency correlation blocks for breadth signal — V1 major-pair universe
+    # Full universe — majors + crosses (ordered by correlation strength)
     _CORRELATION_BLOCKS: Dict[str, List[str]] = {
+        # EUR/GBP/USD majors
         'EUR_USD': ['GBP_USD', 'USD_CHF', 'EUR_JPY', 'EUR_CAD'],
         'GBP_USD': ['EUR_USD', 'USD_CHF', 'GBP_CAD'],
-        'USD_JPY': ['EUR_JPY', 'CAD_JPY'],
         'USD_CAD': ['CAD_JPY', 'EUR_CAD', 'GBP_CAD'],
         'USD_CHF': ['EUR_USD', 'GBP_USD'],
-        'EUR_JPY': ['USD_JPY', 'CAD_JPY', 'EUR_USD'],
-        'CAD_JPY': ['USD_JPY', 'EUR_JPY', 'USD_CAD'],
         'EUR_CAD': ['EUR_USD', 'USD_CAD', 'GBP_CAD'],
         'GBP_CAD': ['GBP_USD', 'USD_CAD', 'EUR_CAD'],
+        # AUD/NZD crosses
+        'AUD_USD': ['AUD_NZD', 'AUD_CAD', 'AUD_JPY', 'NZD_USD'],
+        'NZD_USD': ['AUD_USD', 'AUD_NZD', 'NZD_JPY'],
+        'AUD_NZD': ['AUD_USD', 'NZD_USD', 'AUD_JPY', 'NZD_JPY'],
+        'AUD_CAD': ['AUD_USD', 'AUD_JPY'],
+        # JPY crosses (merged)
+        'USD_JPY': ['EUR_JPY', 'GBP_JPY', 'CAD_JPY', 'CHF_JPY', 'AUD_JPY'],
+        'EUR_JPY': ['USD_JPY', 'GBP_JPY', 'CAD_JPY', 'CHF_JPY', 'EUR_USD'],
+        'GBP_JPY': ['USD_JPY', 'EUR_JPY', 'CAD_JPY', 'CHF_JPY'],
+        'CAD_JPY': ['USD_JPY', 'EUR_JPY', 'GBP_JPY', 'CHF_JPY', 'USD_CAD'],
+        'CHF_JPY': ['USD_JPY', 'EUR_JPY', 'GBP_JPY', 'CAD_JPY'],
+        'AUD_JPY': ['AUD_USD', 'AUD_NZD', 'USD_JPY', 'EUR_JPY', 'GBP_JPY', 'CAD_JPY', 'CHF_JPY'],
+        'NZD_JPY': ['NZD_USD', 'AUD_NZD', 'USD_JPY'],
     }
 
+    _MAX_BREADTH_PEERS = 4  # Cap evaluated peers to control trigger frequency
     def __init__(self, log_path: str):
         self.log_path = log_path
         os.makedirs(os.path.dirname(log_path), exist_ok=True)
@@ -549,7 +561,7 @@ class RegimeSupervisor:
 
         peer_scores = [
             self._last[p].score
-            for p in peers
+            for p in peers[:self._MAX_BREADTH_PEERS]
             if p in self._last
         ]
         if len(peer_scores) < 2:
