@@ -1519,6 +1519,7 @@ class SignalResult:
     # Quality score
     score: int = 0             # Opportunity quality score 0-100 (higher = better setup)
     rr_tp1: float = 0.0       # R:R against TP1 (realistic target) — for scoring only
+    is_counter_trend: bool = False  # True if this is a counter-trend entry (CT override at Tier 1/2)
 
 
 # ============================================================
@@ -1783,6 +1784,7 @@ class SignalEngine:
             wait_for=''
         )
         _result.score = self._calculate_score(_result, zone_map=zone_map, bars_5m=bars_5m, bars_1h=bars_1h, is_ranging=is_ranging, is_counter_trend=is_counter_trend)
+        _result.is_counter_trend = is_counter_trend
         return _result
 
     # ----------------------------------------------------------

@@ -730,6 +730,9 @@ def daily_reset(ctx: dict):
 
     # Clear stale zone debounce cache
     ctx['zone_cache'] = {}
+    # D1+D3: Clear daily counters
+    ctx['zone_entry_counts'] = {}
+    ctx['ct_failure_counts'] = {}
 
     # Refresh equity baseline
     equity = oanda.get_equity()
@@ -926,6 +929,15 @@ def process_instrument(symbol: str, ctx: dict) -> Optional[dict]:
                 pnl=close_pnl, hit_sl=is_stop_hit_exit,
                 entry_time=str(pos.entry_time),
             )
+            # D1: Track CT failure on SL hit for zone exhaustion
+            if is_stop_hit_exit and hasattr(pos, 'is_counter_trend') and pos.is_counter_trend:
+                _pip_sz_ct = 0.01 if 'JPY' in symbol else 0.0001
+                _rounded_ct = round(pos.entry_price / (_pip_sz_ct * 5)) * (_pip_sz_ct * 5)
+                _ct_dir = 'ENTER_LONG' if pos.direction == 'long' else 'ENTER_SHORT'
+                _ct_key = f'{symbol}_{_rounded_ct:.5f}_{_ct_dir}'
+                _ct_fails = ctx.setdefault('ct_failure_counts', {})
+                _ct_fails[_ct_key] = _ct_fails.get(_ct_key, 0) + 1
+                decision_log.info(f'{symbol}: CT_SL_HIT — {_ct_key} now has {_ct_fails[_ct_key]} CT failures today')
             quality_rec = ctx['quality'].close_trade(
                 trade_id=pos.trade_id, close_price=current_price,
                 close_reason=reason_str, hit_sl=is_stop_hit_exit,
@@ -1144,6 +1156,23 @@ def process_instrument(symbol: str, ctx: dict) -> Optional[dict]:
         return None
     # zone_cache is updated in _fire_entry_candidate (only on actual fire, not on ranking queue)
 
+    # D3 fix: Daily zone entry cap — max 3 fresh entries per zone+direction per day
+    _daily_zone_key = f"{symbol}_{_rounded:.5f}_{signal.action}"
+    _zone_counts = ctx.setdefault('zone_entry_counts', {})
+    if _zone_counts.get(_daily_zone_key, 0) >= 3:
+        decision_log.info(f'{symbol}: ZONE_DAILY_CAP — {_daily_zone_key} already entered 3 times today')
+        ctx.setdefault('_blockers', {})[symbol] = {'type': 'zone_daily_cap', 'message': f'Zone daily cap reached (3 entries)'}
+        return None
+
+    # D1 fix: CT failure memory — block CT entries at zones with 2+ SL hits today
+    if signal.is_counter_trend:
+        _ct_key = f"{symbol}_{_rounded:.5f}_{signal.action}"
+        _ct_fails = ctx.setdefault('ct_failure_counts', {})
+        if _ct_fails.get(_ct_key, 0) >= 2:
+            decision_log.info(f'{symbol}: CT_ZONE_EXHAUSTED — {_ct_key} has {_ct_fails[_ct_key]} CT SL hits today')
+            ctx.setdefault('_blockers', {})[symbol] = {'type': 'ct_exhausted', 'message': f'CT zone exhausted ({_ct_fails[_ct_key]} SL hits today)'}
+            return None
+
     # Open wait gate — block new entries for first 15 min after session start
     # Exception: Tier 1 zone + 80%+ ATR + named signal → allow at 50% size
     open_wait_override = False
@@ -1185,6 +1214,7 @@ def process_instrument(symbol: str, ctx: dict) -> Optional[dict]:
         'bars_1h':           bars_1h,
         'bars_d':            bars_d,
         'regime_assessment': regime_assessment,
+        'is_counter_trend': signal.is_counter_trend,
     })
     return None
 
@@ -1335,6 +1365,10 @@ def _fire_entry_candidate(cand: dict, ctx: dict):
         _rounded_zc  = round(signal.entry_price / (_pip_size_zc * 5)) * (_pip_size_zc * 5)
         _zone_key    = f'{symbol}_{_rounded_zc:.5f}_{signal.action}'
         ctx.setdefault('zone_cache', {})[_zone_key] = datetime.now()
+        # D3: increment daily zone entry count
+        _daily_zk = f'{symbol}_{_rounded_zc:.5f}_{signal.action}'
+        _zc = ctx.setdefault('zone_entry_counts', {})
+        _zc[_daily_zk] = _zc.get(_daily_zk, 0) + 1
         # Use actual fill price if available; fall back to signal entry price
         actual_fill = result.get('fill_price') or signal.entry_price
         if actual_fill <= 0:
@@ -1369,6 +1403,10 @@ def _fire_entry_candidate(cand: dict, ctx: dict):
             atr=zone_map.daily_box.ATR,
             oanda_trade_id=result.get('oanda_trade_id', '')
         )
+        # D1: Store CT flag on position for failure tracking at close
+        _pos = trade_manager.positions.get(symbol)
+        if _pos:
+            _pos.is_counter_trend = cand.get('is_counter_trend', False)
         # Register in coordination file for harvester/SL-limit sync
         if _oanda_tid:
             ctx['trade_coord'].register_trade(

@@ -129,7 +129,7 @@ class RegimeSupervisor:
     """
 
     # How many recent candles to examine for each signal
-    _ACCEPTANCE_LOOKBACK  = 6    # 30 min of 5m bars — is price holding outside box?
+    _ACCEPTANCE_LOOKBACK  = 24   # 2 hours of 5m bars — price must stay inside box this long for +1 bonus
     _DECAY_LOOKBACK       = 24   # 24 hours of 1h bars — how have recent wall touches resolved?
     _EXPANSION_LOOKBACK   = 12   # 1 hour — is ATR expanding directionally?
     _FAILURE_WINDOW_HOURS = 6    # Look back 6 hours for qualified trade failures
