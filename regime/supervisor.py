@@ -24,6 +24,14 @@ Signals tracked:
   4. qualified_failures — our own gated setups hit SL recently
   5. breadth            — correlated pairs showing same regime weakness
   6. quality_pressure   — MFE/MAE follow-through from quality tracker
+
+Scoring (rebalanced 2026-04-13):
+  Signals grouped into categories with per-category negative caps to prevent
+  one market condition (breakout) from stacking unlimited penalties.
+  - Market Structure (box, rejection, expansion, BB): cap -3
+  - Performance (failures, quality): cap -3
+  - Corroboration (breadth): cap -1
+  Worst case: -7 (was -13). Best case: +8 (unchanged).
 """
 
 import json
@@ -39,6 +47,79 @@ from .models import RegimeAssessment, RegimeSignal, RegimeState, classify_score
 from .bb_context import compute_bb_context, BBState
 
 log = logging.getLogger("mr-scrooge.regime")
+
+
+# ── Category-capped scoring ──────────────────────────────────
+# Signals are grouped so that multiple measures of the SAME underlying
+# condition (e.g. "price is breaking out") don't stack unlimited penalties.
+
+_SIGNAL_CATEGORY = {
+    # Market Structure — all measure "is price trending/breaking out?"
+    'box_acceptance_above': 'market_structure',
+    'box_acceptance_below': 'market_structure',
+    'box_probe_above':      'market_structure',
+    'box_probe_below':      'market_structure',
+    'box_contained':        'market_structure',
+    'rejection_failed':     'market_structure',
+    'rejection_weak':       'market_structure',
+    'rejection_clean':      'market_structure',
+    'expansion_pressure':   'market_structure',
+    'expansion_mild':       'market_structure',
+    'compression':          'market_structure',
+    'bb_breakout_up':       'market_structure',
+    'bb_breakout_down':     'market_structure',
+    'bb_rejection_short':   'market_structure',
+    'bb_rejection_long':    'market_structure',
+    # Performance — bot's own trade results
+    'qualified_failures':       'performance',
+    'qualified_failures_mixed': 'performance',
+    'single_failure':           'performance',
+    'clean_performance':        'performance',
+    'quality_pressure_weak':    'performance',
+    'quality_pressure_strong':  'performance',
+    # Corroboration — cross-pair confirmation
+    'breadth_negative':     'corroboration',
+    'breadth_positive':     'corroboration',
+}
+
+_CATEGORY_NEG_CAP = {
+    'market_structure': -3,
+    'performance':      -3,
+    'corroboration':    -1,
+}
+
+
+def _compute_capped_score(signals: List[RegimeSignal]):
+    """
+    Sum signal deltas with per-category negative caps.
+    Positive contributions are uncapped.
+    Returns (total_score, direct_score_excluding_breadth).
+    """
+    cat_neg = defaultdict(float)
+    cat_pos = defaultdict(float)
+
+    for s in signals:
+        cat = _SIGNAL_CATEGORY.get(s.name, 'uncategorized')
+        if s.score_delta < 0:
+            cat_neg[cat] += s.score_delta
+        else:
+            cat_pos[cat] += s.score_delta
+
+    # Apply negative caps per category
+    total_neg = sum(
+        max(v, _CATEGORY_NEG_CAP.get(cat, float('-inf')))
+        for cat, v in cat_neg.items()
+    )
+    total_pos = sum(cat_pos.values())
+    total_score = total_neg + total_pos
+
+    # Direct score = everything except corroboration (breadth)
+    # Used by _check_breadth to avoid feedback loops
+    breadth_neg = max(cat_neg.get('corroboration', 0.0), _CATEGORY_NEG_CAP.get('corroboration', float('-inf')))
+    breadth_pos = cat_pos.get('corroboration', 0.0)
+    direct_score = total_score - breadth_neg - breadth_pos
+
+    return total_score, direct_score
 
 
 class RegimeSupervisor:
@@ -186,14 +267,14 @@ class RegimeSupervisor:
         signals: List[RegimeSignal] = []
 
         signals.extend(self._check_box_acceptance(symbol, zone_map, bars_5m, direction))
-        signals.extend(self._check_rejection_decay(symbol, zone_map, bars_1h))
+        signals.extend(self._check_rejection_decay(symbol, zone_map, bars_1h, direction))
         signals.extend(self._check_expansion_pressure(symbol, bars_5m, zone_map))
         signals.extend(self._check_qualified_failures(symbol))
         signals.extend(self._check_breadth(symbol))
         signals.extend(self._check_quality_pressure(symbol, quality_pressure))
         signals.extend(self._check_bb_context(symbol, bars_5m))
 
-        score = sum(s.score_delta for s in signals)
+        score, direct_score = _compute_capped_score(signals)
         state = classify_score(score)
 
         return RegimeAssessment(
@@ -202,6 +283,7 @@ class RegimeSupervisor:
             score=score,
             signals=signals,
             assessed_at=datetime.now(timezone.utc).isoformat(),
+            direct_score=direct_score,
         )
 
     # ── Signal 1: Box Acceptance ──────────────────────────────
@@ -314,13 +396,18 @@ class RegimeSupervisor:
     # ── Signal 2: Rejection Quality Decay ────────────────────
 
     def _check_rejection_decay(
-        self, symbol: str, zone_map, bars_1h: pd.DataFrame
+        self, symbol: str, zone_map, bars_1h: pd.DataFrame,
+        direction: Optional[str] = None,
     ) -> List[RegimeSignal]:
         """
         Have recent wall touches produced clean rejections or weak ones?
         Looks at last N 1H candles for touches near PDH/PDL.
         A 'weak rejection' = candle touched the wall but close was within 20% of the wall.
         A 'failed rejection' = candle touched wall and continued through it.
+
+        Direction-aware (2026-04-13): if shorting at PDH where PDH rejections
+        failed, or longing at PDL where PDL rejections failed, the penalty is
+        reduced because the failed rejections ARE the setup.
         """
         signals = []
         if zone_map is None or bars_1h is None or len(bars_1h) < self._DECAY_LOOKBACK:
@@ -338,7 +425,8 @@ class RegimeSupervisor:
         recent = bars_1h.iloc[-self._DECAY_LOOKBACK:]
         clean_rejections  = 0.0
         weak_rejections   = 0.0
-        failed_rejections = 0.0
+        failed_above      = 0.0  # failed rejections at PDH
+        failed_below      = 0.0  # failed rejections at PDL
 
         n_bars = len(recent)
         for i, (_, bar) in enumerate(recent.iterrows()):
@@ -357,7 +445,7 @@ class RegimeSupervisor:
                 elif close < pdh:
                     weak_rejections += weight
                 else:
-                    failed_rejections += weight
+                    failed_above += weight
 
             # Touch near PDL
             if low <= pdl + proximity:
@@ -366,19 +454,33 @@ class RegimeSupervisor:
                 elif close > pdl:
                     weak_rejections += weight
                 else:
-                    failed_rejections += weight
+                    failed_below += weight
 
+        failed_rejections = failed_above + failed_below
         total_touches = clean_rejections + weak_rejections + failed_rejections
         if total_touches == 0:
             return signals
 
         if failed_rejections >= 2:
+            # Direction-aware: if direction aligns with the failed wall,
+            # the failures ARE the setup (price pushed through, we fade it back).
+            aligned = (
+                (direction == 'short' and failed_above > failed_below) or
+                (direction == 'long'  and failed_below > failed_above)
+            )
+            if aligned:
+                delta = -1
+                detail_suffix = " (direction-aligned, reduced penalty)"
+            else:
+                delta = -2
+                detail_suffix = ""
             signals.append(RegimeSignal(
                 name="rejection_failed",
-                score_delta=-2,
+                score_delta=delta,
                 detail=(
                     f"{failed_rejections:.1f}w failed rejections at box walls in last {self._DECAY_LOOKBACK}H — "
-                    f"wall not holding (clean={clean_rejections:.1f}w weak={weak_rejections:.1f}w)"
+                    f"wall not holding (clean={clean_rejections:.1f}w weak={weak_rejections:.1f}w "
+                    f"above={failed_above:.1f}w below={failed_below:.1f}w){detail_suffix}"
                 ),
             ))
         elif weak_rejections >= 3 and clean_rejections == 0:
@@ -553,6 +655,9 @@ class RegimeSupervisor:
         Are correlated pairs also in poor regime state?
         Uses last cycle's cached assessments — no circular dependency.
         Weak signal on its own; meant to corroborate other signals.
+
+        Uses direct_score (excluding breadth) from peers to prevent
+        feedback loops where negative breadth scores amplify each other.
         """
         signals = []
         peers = self._CORRELATION_BLOCKS.get(symbol)
@@ -560,7 +665,7 @@ class RegimeSupervisor:
             return signals
 
         peer_scores = [
-            self._last[p].score
+            self._last[p].direct_score
             for p in peers[:self._MAX_BREADTH_PEERS]
             if p in self._last
         ]
@@ -574,7 +679,7 @@ class RegimeSupervisor:
                 name="breadth_negative",
                 score_delta=-1,
                 detail=(
-                    f"{len(peer_scores)} correlated pairs avg regime score {avg:+.1f} — "
+                    f"{len(peer_scores)} correlated pairs avg direct regime score {avg:+.1f} — "
                     f"broad weakness, not pair-specific"
                 ),
             ))
@@ -583,7 +688,7 @@ class RegimeSupervisor:
                 name="breadth_positive",
                 score_delta=+1,
                 detail=(
-                    f"{len(peer_scores)} correlated pairs avg regime score {avg:+.1f} — "
+                    f"{len(peer_scores)} correlated pairs avg direct regime score {avg:+.1f} — "
                     f"broad strength confirms reversal conditions"
                 ),
             ))

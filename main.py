@@ -1105,13 +1105,10 @@ def process_instrument(symbol: str, ctx: dict) -> Optional[dict]:
         quality_pressure=ctx['quality'].get_quality_pressure(symbol),
     )
 
-    # Regime gate: BLOCKED suppresses entry; score floor requires >= +1.
-    # Hysteresis: if score was <= -2 in either of last 2 scans, tag as REGIME_HYSTERESIS.
-    _prior_regime_scores = list(ctx.setdefault('_last_regime_scores', {}).get(symbol, []))
-    _regime_scores_dq = ctx['_last_regime_scores'].setdefault(symbol, __import__('collections').deque(maxlen=2))
+    # Regime gate (rebalanced 2026-04-13): only BLOCKED suppresses entry.
+    # Score floor and hysteresis removed — regime state IS the gate now.
+    _regime_scores_dq = ctx.setdefault('_last_regime_scores', {}).setdefault(symbol, __import__('collections').deque(maxlen=2))
     _regime_scores_dq.append(regime_assessment.score)
-    _had_blocked_recently    = any(s <= -3 for s in _prior_regime_scores)
-    _had_restricted_recently = any(s <= -2 for s in _prior_regime_scores)
     from regime import RegimeState as _RS
     if regime_assessment.state == _RS.BLOCKED:
         decision_log.info(f'{symbol}: REGIME_BLOCKED score={regime_assessment.score:+.1f} — entry suppressed')
@@ -1119,30 +1116,15 @@ def process_instrument(symbol: str, ctx: dict) -> Optional[dict]:
         signal.wait_for = f'REGIME_BLOCKED ({regime_assessment.score:+.0f}) — {regime_assessment.summary()}'
         ctx.setdefault('_blockers', {})[symbol] = {'type': 'regime_blocked', 'message': f'Regime BLOCKED ({regime_assessment.score:+.0f}) — {regime_assessment.summary()}'}
         return None
-    if regime_assessment.score < 1:
-        _tag = 'REGIME_HYSTERESIS' if _had_restricted_recently else 'REGIME_FLOOR'
-        decision_log.info(f'{symbol}: {_tag} score={regime_assessment.score:+.1f} — entry suppressed')
-        signal.action   = _tag
-        signal.wait_for = f'{_tag} ({regime_assessment.score:+.0f}) — score must reach +1 to enter'
-        ctx.setdefault('_blockers', {})[symbol] = {'type': 'regime_floor', 'message': f'{_tag} ({regime_assessment.score:+.0f}) — need score ≥+1'}
-        return None
-    if _had_blocked_recently and regime_assessment.score < 2:
-        decision_log.info(
-            f'{symbol}: REGIME_HYSTERESIS score={regime_assessment.score:+.1f} — '
-            f'recovering from BLOCKED, require ≥+2 — entry suppressed'
-        )
-        signal.action   = 'REGIME_HYSTERESIS'
-        signal.wait_for = f'REGIME_HYSTERESIS ({regime_assessment.score:+.0f}) — recovering from BLOCKED, need ≥+2'
-        ctx.setdefault('_blockers', {})[symbol] = {'type': 'regime_hysteresis', 'message': f'REGIME_HYSTERESIS ({regime_assessment.score:+.0f}) — recovering from BLOCKED, need ≥+2'}
-        return None
 
-    # ── Regime scoring adjustment (audit 2026-04-09) ──
-    # NORMAL regime: +10 pts (77.8% WR, +$5,037 V2)
-    # CAUTION regime: -10 pts (57.9% WR, -$5,719 V2)
+    # ── Regime scoring adjustment (rebalanced 2026-04-13) ──
+    # NORMAL: +10 pts, CAUTION: -5 pts, RESTRICTED: -10 pts
     from regime import RegimeState as _RS_score
     if regime_assessment.state == _RS_score.NORMAL:
         signal.score += 10
     elif regime_assessment.state == _RS_score.CAUTION:
+        signal.score -= 5
+    elif regime_assessment.state == _RS_score.RESTRICTED:
         signal.score -= 10
     # Ensure score doesn't go below 1 (0 means validity-rejected)
     if signal.score < 1:

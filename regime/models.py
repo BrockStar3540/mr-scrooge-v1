@@ -25,25 +25,25 @@ class RegimeState(Enum):
     BLOCKED    = "BLOCKED"     # Would halt new entries entirely
 
 
-# Thresholds for score → state mapping
-#   score >= +2  → NORMAL
-#   score  0..+1 → CAUTION
-#   score -1..-2 → RESTRICTED
-#   score <= -3  → BLOCKED
+# Thresholds for score → state mapping (rebalanced 2026-04-13)
+#   score >=  0  → NORMAL
+#   score -1..-2 → CAUTION
+#   score -3..-4 → RESTRICTED
+#   score <= -5  → BLOCKED
 SCORE_THRESHOLDS = {
-    RegimeState.NORMAL:     2,
-    RegimeState.CAUTION:    0,
-    RegimeState.RESTRICTED: -2,
+    RegimeState.NORMAL:     0,
+    RegimeState.CAUTION:   -2,
+    RegimeState.RESTRICTED: -4,
     RegimeState.BLOCKED:    float('-inf'),
 }
 
 
 def classify_score(score: float) -> RegimeState:
-    if score >= 2:
-        return RegimeState.NORMAL
     if score >= 0:
-        return RegimeState.CAUTION
+        return RegimeState.NORMAL
     if score >= -2:
+        return RegimeState.CAUTION
+    if score >= -4:
         return RegimeState.RESTRICTED
     return RegimeState.BLOCKED
 
@@ -64,6 +64,7 @@ class RegimeAssessment:
     score:    float
     signals:  List[RegimeSignal]
     assessed_at: str   # ISO timestamp
+    direct_score: float = 0.0  # score excluding breadth — used by breadth to avoid feedback loop
 
     def would_have_intervened(self) -> bool:
         return self.state != RegimeState.NORMAL
