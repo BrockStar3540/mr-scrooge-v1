@@ -79,3 +79,78 @@ This is the same pattern used in professional trading systems. The lock prevents
 - Dashboard: regime-blocked pairs now show red `REGIME_BLOCKED` badge and blocker banner
 - SL limit events: `SL limit placed`, `fallback triggered`, `skipped (fast market)` in logs
 - Lock contention: if slow loop feels sluggish, fast loop may be holding lock too long
+
+## 2026-04-10 — 4-Actor Trade Coordination (Phase 1)
+
+### What changed
+- New : TradeCoordinator class — file-backed cross-process state at 
+- : Bot registers trades at entry, marks dead on vanished detection. Fast loop checks alive gate before SL limit placement. Ratchet checks sl_owner before pushing SL. Ratchet reads tiers_hit from coordination file to sync partial_1_taken.
+- : Alive gate on process_trade. Updates tiers_hit, sl_owner, current_sl after each tier close. Hands off sl_owner to ratchet after final tier.
+- : place_opposing_limit detects NO_POSITION_TO_REDUCE cancels (fixes 46-order spam bug found in today's audit).
+
+### Why
+Trade audit found 4 independent actors (bot, ratchet, SL-limit, harvester) modifying the same OANDA trade with no shared state. SL-limit spammed 46 API calls on a dead position. Ratchet and harvester raced on SL moves. Ratchet didn't know harvester tier state.
+
+### What to watch
+- Grep logs for 'TradeCoordinator' / 'sl_owner' / 'is_trade_alive' / 'NO_POSITION_TO_REDUCE'
+- Verify no SL limit spam on position close
+- Verify harvester tier completions sync to ratchet (Stage 2 fires after T1)
+- Coordination file: 
+
+## 2026-04-10 — 4-Actor Trade Coordination (Phase 1)
+
+### What changed
+- New core/trade_state.py: TradeCoordinator class for cross-process state
+- main.py: Bot registers trades, marks dead, alive gate in fast loop, sl_owner check, tiers_hit sync
+- harvester/main.py: Alive gate, tier updates to coordination file, SL ownership handoff
+- oanda_client.py: Detect NO_POSITION_TO_REDUCE (fixes 46-order spam bug)
+
+### Why
+4 actors modifying same OANDA trade with no shared state. SL-limit spammed 46 API calls on dead position. Ratchet and harvester raced on SL.
+
+### Watch for
+- Grep logs for TradeCoordinator / sl_owner / is_trade_alive
+- Verify no SL limit spam on position close
+- Coordination file: data/trade_coordination.json
+
+## 2026-04-10 — Phase 3A: Entry Safety Gates
+
+### What changed
+- main.py: Added 4 hard gates before entry candidate ranking
+  - Score >= 20 (blocks score=1 junk)
+  - Spread ratio <= 3.0 (blocks toxic spread conditions)
+  - Trigger freshness (blocks if price already past trigger level)
+  - Trigger distance <= 0.3 ATR_5m (blocks stale/far triggers)
+- All blocked trades logged as SCORE_BLOCKED / SPREAD_BLOCKED / TRIGGER_STALE / TRIGGER_FAR
+
+### Why
+Trade audit showed score=1 entries lost -40.41 (V1) and -940.54 (V2). Theory says do not chase.
+
+### Watch for
+- Grep decision logs for SCORE_BLOCKED, SPREAD_BLOCKED, TRIGGER_STALE, TRIGGER_FAR
+- Fewer trades is expected and correct
+
+## 2026-04-12 — V1/V2 Convergence + Beta Epoch
+
+### What changed
+- regime/supervisor.py: Merged correlation map — full 26-pair universe (was EUR/GBP/USD majors only). Added _MAX_BREADTH_PEERS=4 cap to control trigger frequency.
+
+### Why
+Dashboard comparison revealed V1 and V2 producing divergent regime scores. Root cause: V1 correlation map only covered EUR/GBP/USD, so breadth_negative never fired for AUD/NZD/JPY crosses. V2 had the opposite gap. Both now use identical merged map.
+
+### Context from investigation
+- Manual USD/JPY analysis revealed the alternative box (session_cheat_code) produces trade opportunities that may not align with the Master Theory. The Master Theory says the box is prior-day high/low — the alternative box uses session range after a breach. Jury is still out: not enough post-fix data to determine if alt-box trades have edge. Need clean runtime data to evaluate.
+- Parity harness deployed as systemd service (parity-harness.service). Compares V1 and V2 status.json every 90s, logs drift with severity levels (CRITICAL/WARNING/INFO), saves snapshots on mismatch.
+- Pre-beta data archived to logs/archive_2026-04-12_beta-start/. All logs cleared for clean data collection.
+- Beta epoch: 2026-04-13 02:41 UTC (Sunday 10:41 PM ET).
+
+### Open questions for future analysis
+1. Alternative box (session_cheat_code): Does it have edge? The Master Theory doesn't describe rebuilding boxes from session data after breach. Need 100+ trades on fixed code to evaluate.
+2. USD_MXN: Effectively choked by spread pause + OTR gate + score floor. Should it remain in the universe or be removed entirely? Keep it for observation during beta.
+3. Win/loss asymmetry: Harvester takes small partials (1-8 pips), losses hit full stop (10-15 pips). Need 75%+ win rate to be net positive. Current post-fix V1 data suggests ~75% — monitor during beta.
+4. BB position threshold: V1 and V2 diverge by 4-8 points when bb_pos is near 0.85 boundary. Pure timing noise from 30-second fetch gaps. Not actionable but explains parity harness warnings on CHF_JPY etc.
+
+### Watch for
+- Parity harness: ~/parity_harness/parity.log — should show mostly OK with occasional timing WARNINGs
+- No CRITICAL session mismatches (session bug is fixed)
+- Alternative box trades: track which entries fire on using_alternative=True vs normal box
