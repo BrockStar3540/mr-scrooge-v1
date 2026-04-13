@@ -108,7 +108,7 @@ CONFIG = {
     'max_concurrent_positions': 1,       # 1 max — concentrate capital in best setup
     'max_eur_positions':        2,       # EUR exposure cap — EUR trending; max 2 EUR pairs open
     'max_daily_loss_pct':       0.075,   # 7.5% daily halt — allows 5 full stops at 1.5% risk before shutdown
-    'min_risk_reward':          1.60,    # Reduced to increase qualified setups while keeping RR > 1.5 floor
+    'min_risk_reward':          1.35,    # Reduced to increase qualified setups while keeping RR > 1.5 floor
 
     # Timing
     'scan_interval_seconds':    300,     # 5 minutes
