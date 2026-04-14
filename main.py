@@ -636,23 +636,26 @@ def boot():
             box_machine.initialize_instrument(symbol, zone_map.daily_box, spread)
             log.info(f'Box initialized: {symbol}')
 
-    # Reconcile existing OANDA positions into trade_manager — prevents stacking after restarts
-    open_trades = oanda.get_open_trades()
-    reconciled  = trade_manager.reconcile_from_oanda(open_trades)
-    if reconciled:
-        log.info(f'Reconciled {reconciled} open position(s) from OANDA on startup')
-    else:
-        log.info('No existing Scrooge positions found on OANDA — starting fresh')
-
     _agent_dir = os.path.dirname(os.path.abspath(__file__))
-    regime  = RegimeSupervisor(
-        log_path=os.path.join(_agent_dir, 'data', 'regime-protests.jsonl')
-    )
+
+    # TradeCoordinator must init before reconcile so TP1 can be recovered
     trade_coord = TradeCoordinator(
         os.path.join(_agent_dir, 'data')
     )
     trade_coord.cleanup_dead()
     log.info('TradeCoordinator initialized')
+
+    # Reconcile existing OANDA positions into trade_manager — prevents stacking after restarts
+    open_trades = oanda.get_open_trades()
+    reconciled  = trade_manager.reconcile_from_oanda(open_trades, trade_coord=trade_coord)
+    if reconciled:
+        log.info(f'Reconciled {reconciled} open position(s) from OANDA on startup')
+    else:
+        log.info('No existing Scrooge positions found on OANDA — starting fresh')
+
+    regime  = RegimeSupervisor(
+        log_path=os.path.join(_agent_dir, 'data', 'regime-protests.jsonl')
+    )
 
     quality = TradeQualityTracker(
         log_path=os.path.join(_agent_dir, 'data', 'quality-trades.jsonl')
@@ -1129,6 +1132,40 @@ def process_instrument(symbol: str, ctx: dict) -> Optional[dict]:
         ctx.setdefault('_blockers', {})[symbol] = {'type': 'regime_blocked', 'message': f'Regime BLOCKED ({regime_assessment.score:+.0f}) — {regime_assessment.summary()}'}
         return None
 
+    # FIX 2 (2026-04-14): Entry floor — require regime score >= -1
+    if regime_assessment.score < -1:
+        decision_log.info(
+            f'{symbol}: REGIME_FLOOR score={regime_assessment.score:+.1f} — '
+            f'entry suppressed (need >= -1)'
+        )
+        signal.action   = 'REGIME_FLOOR'
+        signal.wait_for = f'REGIME_FLOOR ({regime_assessment.score:+.0f}) — need score >= -1'
+        ctx.setdefault('_blockers', {})[symbol] = {
+            'type': 'regime_floor',
+            'message': f'REGIME_FLOOR ({regime_assessment.score:+.0f}) — need >= -1'
+        }
+        return None
+
+    # FIX 3 (2026-04-14): BB exhaustion gate — reversals require EXTREME or REJECTION
+    # This is the core filter: don't fade trends, only fade exhaustion.
+    _bb_ctx = ctx['regime']._last_bb.get(symbol)
+    if _bb_ctx:
+        _bb_state = _bb_ctx.state.value
+        _is_reversal = signal.action in ('ENTER_LONG', 'ENTER_SHORT')
+        _exhaustion_states = ('EXTREME_UP', 'EXTREME_DOWN', 'REJECTION_SHORT', 'REJECTION_LONG')
+        if _is_reversal and _bb_state not in _exhaustion_states:
+            decision_log.info(
+                f'{symbol}: BB_NO_EXHAUSTION — bb_state={_bb_state}, '
+                f'reversal blocked (need EXTREME or REJECTION)'
+            )
+            signal.action   = 'BB_NO_EXHAUSTION'
+            signal.wait_for = f'BB state {_bb_state} — no exhaustion, reversal blocked'
+            ctx.setdefault('_blockers', {})[symbol] = {
+                'type': 'bb_no_exhaustion',
+                'message': f'BB {_bb_state} — need EXTREME/REJECTION for reversal'
+            }
+            return None
+
     # ── Regime scoring adjustment (rebalanced 2026-04-13) ──
     # NORMAL: +10 pts, CAUTION: -5 pts, RESTRICTED: -10 pts
     from regime import RegimeState as _RS_score
@@ -1411,7 +1448,7 @@ def _fire_entry_candidate(cand: dict, ctx: dict):
         if _oanda_tid:
             ctx['trade_coord'].register_trade(
                 oanda_trade_id=_oanda_tid, client_id=trade_id,
-                sl=signal.stop_price, actor='bot',
+                sl=signal.stop_price, tp1=signal.tp1_price, actor='bot',
             )
         ctx['quality'].open_trade(
             trade_id=trade_id, symbol=symbol,

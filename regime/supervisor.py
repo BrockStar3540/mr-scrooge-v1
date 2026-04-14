@@ -328,10 +328,10 @@ class RegimeSupervisor:
             if direction == 'short':
                 signals.append(RegimeSignal(
                     name="box_acceptance_above",
-                    score_delta=0,
+                    score_delta=-2,
                     detail=(
                         f"{above_streak} consecutive closes above PDH {pdh:.5f} — "
-                        f"shorting back to box (aligned, no penalty)"
+                        f"shorting back to box (aligned, structural penalty kept)"
                     ),
                 ))
             else:
@@ -357,10 +357,10 @@ class RegimeSupervisor:
             if direction == 'long':
                 signals.append(RegimeSignal(
                     name="box_acceptance_below",
-                    score_delta=0,
+                    score_delta=-2,
                     detail=(
                         f"{below_streak} consecutive closes below PDL {pdl:.5f} — "
-                        f"longing back to box (aligned, no penalty)"
+                        f"longing back to box (aligned, structural penalty kept)"
                     ),
                 ))
             else:

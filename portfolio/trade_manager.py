@@ -165,7 +165,7 @@ class TradeManager:
     # STARTUP RECONCILIATION
     # ----------------------------------------------------------
 
-    def reconcile_from_oanda(self, trades: list) -> int:
+    def reconcile_from_oanda(self, trades: list, trade_coord=None) -> int:
         """
         Re-hydrates open_positions from OANDA's open trade list on startup.
         Prevents trade stacking after bot restarts.
@@ -201,7 +201,11 @@ class TradeManager:
                 entry_price=entry_price,
                 original_stop=stop_price,
                 current_stop=stop_price,
-                take_profit_1=0.0,       # TP1 partial price not recoverable from OANDA on restart
+                take_profit_1=(
+                    trade_coord.get_trade(oanda_id).get('tp1', 0.0)
+                    if trade_coord and trade_coord.get_trade(oanda_id)
+                    else 0.0
+                ),  # TP1 recovered from trade coordination file
                 take_profit_2=tp_price,  # OANDA native TP = our tp2
                 original_quantity=initial_units,
                 remaining_quantity=current_units,

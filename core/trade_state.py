@@ -35,6 +35,7 @@ _DEFAULT_RECORD = {
     'alive': True,
     'sl_owner': 'ratchet',
     'current_sl': 0.0,
+    'tp1': 0.0,
     'tiers_hit': [],
     'last_updated_by': '',
     'last_updated_at': '',
@@ -130,7 +131,7 @@ class TradeCoordinator:
                     pass
 
     def register_trade(self, oanda_trade_id: str, client_id: str,
-                       sl: float, actor: str = 'bot') -> dict:
+                       sl: float, tp1: float = 0.0, actor: str = 'bot') -> dict:
         """Register a new trade at entry time. Returns the new record."""
         data = self._load()
         rec = dict(_DEFAULT_RECORD)
@@ -140,13 +141,14 @@ class TradeCoordinator:
             'alive': True,
             'sl_owner': 'ratchet',
             'current_sl': sl,
+            'tp1': tp1,
             'tiers_hit': [],
             'last_updated_by': actor,
             'last_updated_at': datetime.now(timezone.utc).isoformat(),
         })
         data[str(oanda_trade_id)] = rec
         self._write(data)
-        log.info(f'TradeCoordinator: registered {client_id} (OANDA {oanda_trade_id}) sl={sl:.5f}')
+        log.info(f'TradeCoordinator: registered {client_id} (OANDA {oanda_trade_id}) sl={sl:.5f} tp1={tp1:.5f}')
         return rec
 
     def update_trade(self, oanda_trade_id: str, **fields) -> bool:
