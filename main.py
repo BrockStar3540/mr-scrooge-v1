@@ -61,6 +61,7 @@ from portfolio.trade_manager import TradeManager
 from status import write_status
 from regime import RegimeSupervisor
 from extreme_reversal import ExtremeReversalEngine
+from trend_engine import TrendEngine
 from quality import TradeQualityTracker, EntryContextLogger
 
 # ============================================================
@@ -101,6 +102,13 @@ CONFIG = {
     # Risk — bigger conviction, fewer trades
     'max_trade_risk_pct':      0.015,    # kept for daily-loss reference; sizing is now margin-based
     'margin_utilization_pct':  0.80,     # deploy 80% of equity as margin per trade
+    # Trend participation engine (2026-04-14)
+    'trend_enabled':             True,
+    'trend_full_size_fraction':  0.50,
+    'trend_stretch_size_fraction': 0.30,
+    'trend_sma_proximity_pct':  0.0015,
+    'trend_atr_stop_multiple':  1.0,
+    'trend_fixed_score':        30,
     'max_risk_per_trade_pct':  0.04,     # 4% max account loss per trade — caps units when SL is wide
     'target_profit_pct':       0.0025,   # 0.25% of equity per trade — profit-anchored sizing target
     'tp1_allocation_pct':      0.40,     # 40% of position closes at TP1 — sizing anchors to this partial
@@ -672,6 +680,7 @@ def boot():
         'zone_detector':  zone_detector,
         'signal_engine':  signal_engine,
         'extreme_reversal': ExtremeReversalEngine(CONFIG),
+'trend_engine':     TrendEngine(CONFIG),
         'trade_manager':  trade_manager,
         'box_machine':    box_machine,
         'active_instruments': active_instruments,
@@ -1112,6 +1121,35 @@ def process_instrument(symbol: str, ctx: dict) -> Optional[dict]:
                 'entry_type':    'EXTREME_REVERSAL',
             })
             return
+        
+        # Trend participation fallback (no-signal path)
+        _bb_trend = ctx['regime']._last_bb.get(symbol)
+        if _bb_trend and _bb_trend.state.value in ('TREND_UP', 'TREND_DOWN', 'STRETCH_UP', 'STRETCH_DOWN'):
+            _trend_sig2 = ctx['trend_engine'].evaluate(
+                symbol, bars_5m, zone_map, _bb_trend,
+                live_spread=live_spread, half_box=half_box,
+            )
+            if _trend_sig2 is not None:
+                _t_type2 = 'TREND_FULL' if _bb_trend.state.value.startswith('TREND') else 'TREND_STRETCH'
+                decision_log.info(
+                    f'{symbol}: {_t_type2} queued (no-signal) | '
+                    f'{_trend_sig2.action} @ {_trend_sig2.entry_price:.5f}'
+                )
+                ctx.setdefault('_cycle_entry_candidates', []).append({
+                    'symbol':        symbol,
+                    'signal':        _trend_sig2,
+                    'current_price': current_price,
+                    'half_box':      half_box,
+                    'live_spread':   live_spread,
+                    'total_overhead': total_overhead,
+                    'zone_map':      zone_map,
+                    'bars_5m':       bars_5m,
+                    'bars_1h':       bars_1h,
+                    'regime_assessment': _no_sig_regime,
+                    'is_counter_trend': False,
+                    'entry_type':    _t_type2,
+                })
+                return
         return None
 
     regime_assessment = ctx['regime'].observe(
@@ -1164,6 +1202,35 @@ def process_instrument(symbol: str, ctx: dict) -> Optional[dict]:
                 'type': 'bb_no_exhaustion',
                 'message': f'BB {_bb_state} — need EXTREME/REJECTION for reversal'
             }
+            
+            # Trend participation fallback
+            if _bb_state in ('TREND_UP', 'TREND_DOWN', 'STRETCH_UP', 'STRETCH_DOWN'):
+                _trend_sig = ctx['trend_engine'].evaluate(
+                    symbol, bars_5m, zone_map, _bb_ctx,
+                    live_spread=live_spread, half_box=half_box,
+                )
+                if _trend_sig is not None:
+                    _t_type = 'TREND_FULL' if _bb_state.startswith('TREND') else 'TREND_STRETCH'
+                    decision_log.info(
+                        f'{symbol}: {_t_type} queued | '
+                        f'{_trend_sig.action} @ {_trend_sig.entry_price:.5f} '
+                        f'SL={_trend_sig.stop_price:.5f} RR={_trend_sig.risk_reward_ratio:.2f}'
+                    )
+                    ctx.setdefault('_cycle_entry_candidates', []).append({
+                        'symbol':        symbol,
+                        'signal':        _trend_sig,
+                        'current_price': current_price,
+                        'half_box':      half_box,
+                        'live_spread':   live_spread,
+                        'total_overhead': total_overhead,
+                        'zone_map':      zone_map,
+                        'bars_5m':       bars_5m,
+                        'bars_1h':       bars_1h,
+                        'regime_assessment': regime_assessment,
+                        'is_counter_trend': False,
+                        'entry_type':    _t_type,
+                    })
+                    return None
             return None
 
     # ── Regime scoring adjustment (rebalanced 2026-04-13) ──
@@ -1309,6 +1376,17 @@ def _fire_entry_candidate(cand: dict, ctx: dict):
             f'{symbol}: REGIME_RESTRICTED score={_regime_cand.score:+.1f} — '
             f'position size halved to {units} units'
         )
+
+    # Trend entry size reduction
+    _entry_type = cand.get('entry_type', '')
+    if _entry_type == 'TREND_FULL':
+        _tf = CONFIG.get('trend_full_size_fraction', 0.50)
+        units = int(units * _tf)
+        decision_log.info(f'{symbol}: TREND_FULL size — {_tf:.0%} ({units} units)')
+    elif _entry_type == 'TREND_STRETCH':
+        _tf = CONFIG.get('trend_stretch_size_fraction', 0.30)
+        units = int(units * _tf)
+        decision_log.info(f'{symbol}: TREND_STRETCH size — {_tf:.0%} ({units} units)')
 
     # Logging
     risk_pips  = risk_points / pip_size
