@@ -172,7 +172,7 @@ class TradeCoordinator:
             data[key]['last_updated_by'] = actor
             data[key]['last_updated_at'] = datetime.now(timezone.utc).isoformat()
             self._write(data)
-            log.info(f'TradeCoordinator: marked dead {data[key].get(client_id, key)} by {actor}')
+            log.info(f'TradeCoordinator: marked dead {data[key].get("client_id", key)} by {actor}')
 
     def cleanup_dead(self, max_age_hours: float = 24.0):
         """Remove dead records older than max_age_hours. Called periodically."""
