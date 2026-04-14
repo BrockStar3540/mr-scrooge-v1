@@ -992,7 +992,9 @@ def process_instrument(symbol: str, ctx: dict) -> Optional[dict]:
                     pos.trade_id,
                     pos.oanda_trade_id,
                     mgmt.get('price', pos.current_stop),
-                    mgmt.get('reason', 'manager')
+                    mgmt.get('reason', 'manager'),
+                    direction=pos.direction,
+                    symbol=symbol,
                 )
                 if _tc and pos.oanda_trade_id:
                     _tc.update_trade(

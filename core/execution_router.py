@@ -194,8 +194,63 @@ class OANDAExecutionRouter:
                    trade_id: str,
                    oanda_trade_id: str,
                    new_stop: float,
-                   reason: str) -> bool:
-        """Moves stop loss — break-even or hourly trail."""
+                   reason: str,
+                   direction: str = '',
+                   symbol: str = '') -> bool:
+        """
+        Move stop loss with execution-side validation (2026-04-14).
+        Prevents instant SL fills by validating against ask (shorts) / bid (longs).
+        Blocks during wide-spread conditions.
+        """
+        # ── Trigger-side validation with spread awareness ──
+        if direction and symbol:
+            prices = self.oanda.get_prices([symbol]).get(symbol)
+            if prices:
+                bid = prices['bid']
+                ask = prices['ask']
+                spread = ask - bid
+                pip = 0.01 if 'JPY' in symbol else 0.0001
+
+                # Spread kill switch
+                spread_pips = spread / pip
+                spread_limit = 5.0 if 'JPY' in symbol else 2.0
+                if spread_pips > spread_limit:
+                    log.warning(
+                        f'SL move BLOCKED (spread kill): {trade_id} | '
+                        f'spread={spread_pips:.1f}p > limit={spread_limit}p | '
+                        f'new_sl={new_stop:.5f} | {reason}'
+                    )
+                    return False
+
+                # No-man's zone
+                if bid < new_stop < ask:
+                    log.warning(
+                        f'SL move BLOCKED (no-mans-zone): {trade_id} | '
+                        f'bid={bid:.5f} < sl={new_stop:.5f} < ask={ask:.5f} | {reason}'
+                    )
+                    return False
+
+                # Trigger-side validation with buffer
+                spread_buffer = max(spread * 1.5, pip * 2)
+                if direction == 'short':
+                    safe_sl = ask + spread_buffer
+                    if new_stop <= safe_sl:
+                        log.warning(
+                            f'SL move BLOCKED (trigger-side): {trade_id} | '
+                            f'short sl={new_stop:.5f} <= ask+buffer={safe_sl:.5f} | '
+                            f'ask={ask:.5f} spread={spread_pips:.1f}p | {reason}'
+                        )
+                        return False
+                elif direction == 'long':
+                    safe_sl = bid - spread_buffer
+                    if new_stop >= safe_sl:
+                        log.warning(
+                            f'SL move BLOCKED (trigger-side): {trade_id} | '
+                            f'long sl={new_stop:.5f} >= bid-buffer={safe_sl:.5f} | '
+                            f'bid={bid:.5f} spread={spread_pips:.1f}p | {reason}'
+                        )
+                        return False
+
         success = self.oanda.modify_trade_stop(oanda_trade_id, new_stop)
         if success:
             log.info(f'Stop moved: {trade_id} → {new_stop:.5f} | {reason}')
