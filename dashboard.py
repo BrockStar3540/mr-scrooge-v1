@@ -63,6 +63,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
         elif path == '/api/regime-summary':
             self._serve_regime_summary()
 
+        elif path == '/api/execution-audit':
+            self._serve_execution_audit()
+
         elif path == '/api/trade-quality':
             self._serve_trade_quality()
 

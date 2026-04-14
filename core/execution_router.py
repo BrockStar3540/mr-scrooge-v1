@@ -19,6 +19,9 @@
 # Coordinates with fee_calculator for spread spike detection.
 # ============================================================
 
+import json
+import os
+from datetime import datetime, timezone
 import logging
 import time
 from datetime import datetime, timedelta
@@ -29,6 +32,18 @@ from core.oanda_client import OANDAClient
 from core.fee_calculator import OANDAFeeCalculator
 
 log = logging.getLogger('mr-scrooge.execution_router')
+
+# Execution audit — one JSONL record per SL move attempt
+_AUDIT_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'data', 'execution-audit.jsonl')
+
+def _audit_sl_event(event: dict):
+    try:
+        os.makedirs(os.path.dirname(_AUDIT_PATH), exist_ok=True)
+        with open(_AUDIT_PATH, 'a') as f:
+            f.write(json.dumps(event, default=str) + '\n')
+    except Exception:
+        pass
+
 
 
 @dataclass
@@ -220,7 +235,15 @@ class OANDAExecutionRouter:
                         f'spread={spread_pips:.1f}p > limit={spread_limit}p | '
                         f'new_sl={new_stop:.5f} | {reason}'
                     )
-                    return False
+                    
+                _audit_sl_event({
+                    'ts': datetime.now(timezone.utc).isoformat(),
+                    'trade_id': trade_id, 'symbol': symbol, 'direction': direction,
+                    'event': 'SL_BLOCKED', 'reason': 'spread kill',
+                    'new_sl': new_stop, 'bid': bid, 'ask': ask,
+                    'spread_pips': spread_pips, 'outcome': 'skipped',
+                })
+                return False
 
                 # No-man's zone
                 if bid < new_stop < ask:
@@ -228,9 +251,18 @@ class OANDAExecutionRouter:
                         f'SL move BLOCKED (no-mans-zone): {trade_id} | '
                         f'bid={bid:.5f} < sl={new_stop:.5f} < ask={ask:.5f} | {reason}'
                     )
-                    return False
+                    
+                _audit_sl_event({
+                    'ts': datetime.now(timezone.utc).isoformat(),
+                    'trade_id': trade_id, 'symbol': symbol, 'direction': direction,
+                    'event': 'SL_BLOCKED', 'reason': 'no-mans-zone',
+                    'new_sl': new_stop, 'bid': bid, 'ask': ask,
+                    'spread_pips': spread_pips, 'outcome': 'skipped',
+                })
+                return False
 
                 # Trigger-side validation with buffer
+                # FIX 1+3: Trigger-side validation with buffer
                 spread_buffer = max(spread * 1.5, pip * 2)
                 if direction == 'short':
                     safe_sl = ask + spread_buffer
@@ -240,6 +272,13 @@ class OANDAExecutionRouter:
                             f'short sl={new_stop:.5f} <= ask+buffer={safe_sl:.5f} | '
                             f'ask={ask:.5f} spread={spread_pips:.1f}p | {reason}'
                         )
+                        _audit_sl_event({
+                            'ts': datetime.now(timezone.utc).isoformat(),
+                            'trade_id': trade_id, 'symbol': symbol, 'direction': direction,
+                            'event': 'SL_BLOCKED', 'reason': 'trigger-side',
+                            'new_sl': new_stop, 'bid': bid, 'ask': ask,
+                            'spread_pips': spread_pips, 'outcome': 'skipped',
+                        })
                         return False
                 elif direction == 'long':
                     safe_sl = bid - spread_buffer
@@ -249,11 +288,27 @@ class OANDAExecutionRouter:
                             f'long sl={new_stop:.5f} >= bid-buffer={safe_sl:.5f} | '
                             f'bid={bid:.5f} spread={spread_pips:.1f}p | {reason}'
                         )
+                        _audit_sl_event({
+                            'ts': datetime.now(timezone.utc).isoformat(),
+                            'trade_id': trade_id, 'symbol': symbol, 'direction': direction,
+                            'event': 'SL_BLOCKED', 'reason': 'trigger-side',
+                            'new_sl': new_stop, 'bid': bid, 'ask': ask,
+                            'spread_pips': spread_pips, 'outcome': 'skipped',
+                        })
                         return False
 
         success = self.oanda.modify_trade_stop(oanda_trade_id, new_stop)
         if success:
             log.info(f'Stop moved: {trade_id} → {new_stop:.5f} | {reason}')
+
+        if direction and symbol:
+            _audit_sl_event({
+                'ts': datetime.now(timezone.utc).isoformat(),
+                'trade_id': trade_id, 'symbol': symbol, 'direction': direction,
+                'event': 'SL_MOVED', 'reason': reason,
+                'new_sl': new_stop,
+                'outcome': 'success',
+            })
         return success
 
     def partial_close(self,

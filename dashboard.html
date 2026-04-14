@@ -284,6 +284,7 @@ tr.rejected-row td { color:var(--dim); }
   <div class="tab" data-tab="config">Config</div>
   <div class="tab" data-tab="harvester">Harvester</div>
   <div class="tab" data-tab="logs">Logs</div>
+  <div class="tab" data-tab="execution">Execution</div>
 </div>
 
 <!-- Positions Tab -->
@@ -410,6 +411,39 @@ tr.rejected-row td { color:var(--dim); }
   </div>
 </div>
 
+<div class="tab-content" id="tab-execution">
+  <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:16px" id="exec-stats">
+    <div style="background:var(--card);border-radius:8px;padding:16px;text-align:center">
+      <div style="color:var(--dim);font-size:11px;text-transform:uppercase;letter-spacing:1px">SL Moves</div>
+      <div id="exec-moves" style="font-size:28px;font-weight:700;color:var(--green);margin-top:4px">0</div>
+    </div>
+    <div style="background:var(--card);border-radius:8px;padding:16px;text-align:center">
+      <div style="color:var(--dim);font-size:11px;text-transform:uppercase;letter-spacing:1px">SL Blocked</div>
+      <div id="exec-blocked" style="font-size:28px;font-weight:700;color:var(--red);margin-top:4px">0</div>
+    </div>
+    <div style="background:var(--card);border-radius:8px;padding:16px;text-align:center">
+      <div style="color:var(--dim);font-size:11px;text-transform:uppercase;letter-spacing:1px">Avg Blocked Spread</div>
+      <div id="exec-spread" style="font-size:28px;font-weight:700;color:var(--warn);margin-top:4px">0p</div>
+    </div>
+    <div style="background:var(--card);border-radius:8px;padding:16px;text-align:center">
+      <div style="color:var(--dim);font-size:11px;text-transform:uppercase;letter-spacing:1px">Block Rate</div>
+      <div id="exec-rate" style="font-size:28px;font-weight:700;color:var(--text);margin-top:4px">0%</div>
+    </div>
+  </div>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+    <div>
+      <h3 style="color:var(--text);margin:0 0 8px">Block Reasons</h3>
+      <div id="exec-reasons" style="background:var(--card);border-radius:8px;padding:12px;font-family:monospace;font-size:12px;color:var(--dim)">No data</div>
+    </div>
+    <div>
+      <h3 style="color:var(--text);margin:0 0 8px">Engine Performance</h3>
+      <div id="exec-engines" style="background:var(--card);border-radius:8px;padding:12px;font-family:monospace;font-size:12px;color:var(--dim)">No data</div>
+    </div>
+  </div>
+  <h3 style="color:var(--text);margin:16px 0 8px">Recent Events</h3>
+  <div id="exec-events" style="background:var(--card);border-radius:8px;padding:12px;max-height:400px;overflow-y:auto;font-family:monospace;font-size:11px;color:var(--dim)">No events</div>
+</div>
+
 <div class="tab-content" id="tab-logs">
   <div class="log-filters">
     <button class="log-filter active" data-filter="all" onclick="setLogFilter(this)">All</button>
@@ -472,6 +506,7 @@ document.querySelectorAll('.tab').forEach(tab => {
     document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
     document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
     tab.classList.add('active');
+    if (this.dataset.tab === 'execution') fetchExecutionAudit();
     document.getElementById('tab-' + tab.dataset.tab).classList.add('active');
     if (tab.dataset.tab === 'logs') fetchLogs();
       if (tab.dataset.tab === 'quality') fetchTradeQuality();
@@ -636,6 +671,69 @@ async function fetchTradeQuality() {
 }
 
 // Fetch regime every 30s
+
+async function fetchExecutionAudit() {
+  try {
+    const r = await fetch('/api/execution-audit', {headers: {'Authorization': 'Basic ' + btoa(user + ':' + pass_)}});
+    const d = await r.json();
+    // Stats
+    const moves = d.total_moves || 0;
+    const blocked = d.total_blocked || 0;
+    const total = moves + blocked;
+    document.getElementById('exec-moves').textContent = moves;
+    document.getElementById('exec-blocked').textContent = blocked;
+    document.getElementById('exec-spread').textContent = (d.avg_blocked_spread || 0).toFixed(1) + 'p';
+    document.getElementById('exec-rate').textContent = total > 0 ? ((blocked / total * 100).toFixed(0) + '%') : '0%';
+
+    // Block reasons
+    const reasons = d.block_reasons || {};
+    const rhtml = Object.entries(reasons).length > 0
+      ? Object.entries(reasons).map(([k,v]) => '<div style="display:flex;justify-content:space-between;padding:3px 0;border-bottom:1px solid var(--border)">' +
+          '<span style="color:var(--red)">' + k + '</span><span style="color:var(--text);font-weight:700">' + v + '</span></div>').join('')
+      : '<span style="color:var(--green)">No blocks — all SL moves valid</span>';
+    document.getElementById('exec-reasons').innerHTML = rhtml;
+
+    // Engine stats
+    const engines = d.engine_stats || {};
+    const ehtml = Object.entries(engines).length > 0
+      ? '<table style="width:100%;border-collapse:collapse">' +
+        '<tr style="color:var(--dim);font-size:10px;text-transform:uppercase"><th style="text-align:left;padding:4px">Engine</th><th>Trades</th><th>Wins</th><th>WR%</th><th>P/L</th></tr>' +
+        Object.entries(engines).map(([eng, s]) => {
+          const wr = s.trades > 0 ? (s.wins / s.trades * 100).toFixed(0) : '0';
+          const pnl = s.total_pnl || 0;
+          const pnlColor = pnl >= 0 ? 'var(--green)' : 'var(--red)';
+          return '<tr><td style="padding:4px;color:var(--text)">' + eng + '</td>' +
+            '<td style="text-align:center;color:var(--text)">' + s.trades + '</td>' +
+            '<td style="text-align:center;color:var(--green)">' + s.wins + '</td>' +
+            '<td style="text-align:center;color:var(--text)">' + wr + '%</td>' +
+            '<td style="text-align:center;color:' + pnlColor + '">$' + pnl.toFixed(2) + '</td></tr>';
+        }).join('') + '</table>'
+      : '<span style="color:var(--dim)">No trades yet</span>';
+    document.getElementById('exec-engines').innerHTML = ehtml;
+
+    // Recent events
+    const events = (d.recent_events || []).reverse();
+    const evhtml = events.length > 0
+      ? events.map(e => {
+          const color = e.outcome === 'skipped' ? 'var(--red)' : 'var(--green)';
+          const icon = e.outcome === 'skipped' ? '❌' : '✅';
+          const ts = (e.ts || '').split('T')[1]?.split('.')[0] || '';
+          const spread = e.spread_pips ? e.spread_pips.toFixed(1) + 'p' : '';
+          return '<div style="padding:4px 0;border-bottom:1px solid var(--border)">' +
+            '<span>' + icon + '</span> ' +
+            '<span style="color:var(--dim)">' + ts + '</span> ' +
+            '<span style="color:var(--text);font-weight:600">' + (e.symbol || '') + '</span> ' +
+            '<span style="color:' + color + '">' + (e.event || '') + '</span> ' +
+            (e.reason ? '<span style="color:var(--warn)"> [' + e.reason + ']</span>' : '') +
+            (spread ? ' <span style="color:var(--dim)">spread=' + spread + '</span>' : '') +
+            ' <span style="color:var(--dim)">sl=' + (e.new_sl || 0).toFixed(5) + '</span>' +
+            '</div>';
+        }).join('')
+      : '<span style="color:var(--dim)">No execution events recorded</span>';
+    document.getElementById('exec-events').innerHTML = evhtml;
+  } catch(e) { console.error('Execution audit error', e); }
+}
+
 setInterval(fetchRegime, 30000);
 fetchRegime();
 
