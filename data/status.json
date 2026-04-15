@@ -1,12 +1,12 @@
 {
-  "timestamp": "2026-04-09T22:40:40.996732+00:00",
-  "cycle": 2,
-  "equity": 1562.95,
-  "daily_pnl": -31.49,
+  "timestamp": "2026-04-15T20:08:23.407530+00:00",
+  "cycle": 7,
+  "equity": 1498.62,
+  "daily_pnl": 0.0,
   "daily_loss_pct": 0.0,
-  "positions_open": 1,
+  "positions_open": 0,
   "active_sessions": [
-    "Sydney"
+    "New York"
   ],
   "active_instruments": [
     "EUR_USD",
@@ -14,185 +14,20 @@
     "USD_JPY",
     "USD_CAD",
     "USD_MXN",
-    "EUR_JPY",
-    "GBP_JPY",
-    "AUD_JPY",
-    "CAD_JPY",
-    "NZD_JPY",
-    "EUR_NZD",
-    "AUD_CAD"
+    "CHF_JPY",
+    "EUR_NZD"
   ],
   "weekend": false,
-  "positions": [
-    {
-      "trade_id": "scrooge_gbpusdccd25647",
-      "symbol": "GBP_USD",
-      "direction": "short",
-      "entry_price": 1.34341,
-      "current_stop": 1.342946,
-      "original_stop": 1.34858,
-      "tp1": 0.0,
-      "tp2": 1.32882,
-      "original_quantity": 18522.0,
-      "remaining_quantity": 18522.0,
-      "entry_time": "2026-04-09T18:59:30.724292849Z",
-      "signal_type": "reconciled",
-      "zone_tier": 2,
-      "overhead_cost": 0.0,
-      "break_even_achieved": true,
-      "partial_1_taken": false,
-      "partial_2_taken": false,
-      "oanda_trade_id": "5944",
-      "status": "open"
-    }
-  ],
+  "positions": [],
   "signals": [
     {
       "symbol": "USD_JPY",
-      "action": "NO_TRADE",
+      "action": "ENTER_LONG",
       "gates": {
         "zone": {
           "passed": true,
           "tier": 1,
-          "details": "Tier 1 zone at 158.93144 (breakout_flip, strength 100/100)"
-        },
-        "atr": {
-          "passed": true,
-          "consumed_pct": 0.264,
-          "strength": "weak"
-        },
-        "sucker_move": {
-          "passed": true
-        },
-        "pitchfork": {
-          "passed": true,
-          "type": "power_of_towers",
-          "confidence": "HIGH"
-        },
-        "otr": {
-          "passed": true,
-          "ratio": 0.2075,
-          "category": "marginal"
-        }
-      },
-      "entry_price": 0,
-      "stop_price": 0,
-      "tp1_price": 0,
-      "tp2_price": 0,
-      "risk_reward": 0,
-      "rejection_reasons": [
-        "RR 1.19 < minimum 1.6 \u2014 insufficient reward"
-      ],
-      "all_gates_passed": false,
-      "score": 52,
-      "score_detail": {
-        "zone": 30,
-        "atr": 12,
-        "otr": 0,
-        "rr": 0,
-        "pattern": 10,
-        "z_edge": 0,
-        "bb_edge": 0,
-        "structure": 0,
-        "gap": 0
-      },
-      "validity": {
-        "setup_type": "MEAN_REV",
-        "valid": true,
-        "z_score": null,
-        "bb_pos": null,
-        "adr": null,
-        "direction": "long",
-        "touch_count": 0,
-        "gap_detected": false,
-        "gap_direction": "",
-        "structural_override": false,
-        "checks": {
-          "z_direction_match": null,
-          "z_abs_min": null,
-          "adr_ceiling": null,
-          "structural_override": false
-        },
-        "invalid_reasons": []
-      }
-    },
-    {
-      "symbol": "AUD_CAD",
-      "action": "NO_TRADE",
-      "gates": {
-        "zone": {
-          "passed": true,
-          "tier": 1,
-          "details": "Tier 1 zone at 0.97995 (resistance, strength 80/100)"
-        },
-        "atr": {
-          "passed": true,
-          "consumed_pct": 0.259,
-          "strength": "weak"
-        },
-        "sucker_move": {
-          "passed": true
-        },
-        "pitchfork": {
-          "passed": true,
-          "type": "power_of_towers",
-          "confidence": "HIGH"
-        },
-        "otr": {
-          "passed": true,
-          "ratio": 0.2278,
-          "category": "marginal"
-        }
-      },
-      "entry_price": 0,
-      "stop_price": 0,
-      "tp1_price": 0,
-      "tp2_price": 0,
-      "risk_reward": 0,
-      "rejection_reasons": [
-        "RR 1.05 < minimum 1.6 \u2014 insufficient reward"
-      ],
-      "all_gates_passed": false,
-      "score": 52,
-      "score_detail": {
-        "zone": 30,
-        "atr": 12,
-        "otr": 0,
-        "rr": 0,
-        "pattern": 10,
-        "z_edge": 0,
-        "bb_edge": 0,
-        "structure": 0,
-        "gap": 0
-      },
-      "validity": {
-        "setup_type": "MEAN_REV",
-        "valid": true,
-        "z_score": null,
-        "bb_pos": null,
-        "adr": null,
-        "direction": "long",
-        "touch_count": 0,
-        "gap_detected": false,
-        "gap_direction": "",
-        "structural_override": false,
-        "checks": {
-          "z_direction_match": null,
-          "z_abs_min": null,
-          "adr_ceiling": null,
-          "structural_override": false
-        },
-        "invalid_reasons": []
-      }
-    },
-    {
-      "symbol": "EUR_USD",
-      "action": "NO_TRADE",
-      "gates": {
-        "zone": {
-          "passed": true,
-          "tier": 1,
-          "details": "Tier 1 zone at 1.17190 (resistance, strength 80/100)"
+          "details": "Tier 1 zone at 159.41049 (breakout_flip, strength 100/100)"
         },
         "atr": {
           "passed": true,
@@ -204,227 +39,20 @@
         },
         "pitchfork": {
           "passed": true,
-          "type": "john_wick",
+          "type": "power_of_towers",
           "confidence": "HIGH"
         },
         "otr": {
           "passed": true,
-          "ratio": 0.0975,
+          "ratio": 0.0753,
           "category": "acceptable"
         }
       },
-      "entry_price": 0,
-      "stop_price": 0,
-      "tp1_price": 0,
-      "tp2_price": 0,
-      "risk_reward": 0,
-      "rejection_reasons": [
-        "RR 1.34 < minimum 1.6 \u2014 insufficient reward"
-      ],
-      "all_gates_passed": false,
-      "score": 70,
-      "score_detail": {
-        "zone": 30,
-        "atr": 20,
-        "otr": 0,
-        "rr": 0,
-        "pattern": 20,
-        "z_edge": 0,
-        "bb_edge": 0,
-        "structure": 0,
-        "gap": 0
-      },
-      "validity": {
-        "setup_type": "MEAN_REV",
-        "valid": true,
-        "z_score": null,
-        "bb_pos": null,
-        "adr": null,
-        "direction": "long",
-        "touch_count": 0,
-        "gap_detected": false,
-        "gap_direction": "",
-        "structural_override": false,
-        "checks": {
-          "z_direction_match": null,
-          "z_abs_min": null,
-          "adr_ceiling": null,
-          "structural_override": false
-        },
-        "invalid_reasons": []
-      }
-    },
-    {
-      "symbol": "USD_CAD",
-      "action": "NO_TRADE",
-      "gates": {
-        "zone": {
-          "passed": true,
-          "tier": 1,
-          "details": "Tier 1 zone at 1.38048 (support, strength 40/100)"
-        },
-        "atr": {
-          "passed": true,
-          "consumed_pct": 0.286,
-          "strength": "weak"
-        },
-        "sucker_move": {
-          "passed": false
-        },
-        "pitchfork": {
-          "passed": false,
-          "type": null,
-          "confidence": null
-        },
-        "otr": {
-          "passed": false,
-          "ratio": 0.3023,
-          "category": "skip"
-        }
-      },
-      "entry_price": 0,
-      "stop_price": 0,
-      "tp1_price": 0,
-      "tp2_price": 0,
-      "risk_reward": 0,
-      "rejection_reasons": [
-        "OTR 30.2% > 25.0% \u2014 spread too costly for box"
-      ],
-      "all_gates_passed": false,
-      "score": 42,
-      "score_detail": {
-        "zone": 30,
-        "atr": 12,
-        "otr": 0,
-        "rr": 0,
-        "pattern": 0,
-        "z_edge": 0,
-        "bb_edge": 0,
-        "structure": 0,
-        "gap": 0
-      },
-      "validity": {
-        "setup_type": "MEAN_REV",
-        "valid": true,
-        "z_score": null,
-        "bb_pos": null,
-        "adr": null,
-        "direction": "long",
-        "touch_count": 0,
-        "gap_detected": false,
-        "gap_direction": "",
-        "structural_override": false,
-        "checks": {
-          "z_direction_match": null,
-          "z_abs_min": null,
-          "adr_ceiling": null,
-          "structural_override": false
-        },
-        "invalid_reasons": []
-      }
-    },
-    {
-      "symbol": "USD_MXN",
-      "action": "NO_TRADE",
-      "gates": {
-        "zone": {
-          "passed": true,
-          "tier": 1,
-          "details": "Tier 1 zone at 17.36440 (support, strength 65/100)"
-        },
-        "atr": {
-          "passed": true,
-          "consumed_pct": 0.269,
-          "strength": "weak"
-        },
-        "sucker_move": {
-          "passed": false
-        },
-        "pitchfork": {
-          "passed": false,
-          "type": null,
-          "confidence": null
-        },
-        "otr": {
-          "passed": false,
-          "ratio": 0.2748,
-          "category": "skip"
-        }
-      },
-      "entry_price": 0,
-      "stop_price": 0,
-      "tp1_price": 0,
-      "tp2_price": 0,
-      "risk_reward": 0,
-      "rejection_reasons": [
-        "OTR 27.5% > 25.0% \u2014 spread too costly for box"
-      ],
-      "all_gates_passed": false,
-      "score": 42,
-      "score_detail": {
-        "zone": 30,
-        "atr": 12,
-        "otr": 0,
-        "rr": 0,
-        "pattern": 0,
-        "z_edge": 0,
-        "bb_edge": 0,
-        "structure": 0,
-        "gap": 0
-      },
-      "validity": {
-        "setup_type": "MEAN_REV",
-        "valid": true,
-        "z_score": null,
-        "bb_pos": null,
-        "adr": null,
-        "direction": "long",
-        "touch_count": 0,
-        "gap_detected": false,
-        "gap_direction": "",
-        "structural_override": false,
-        "checks": {
-          "z_direction_match": null,
-          "z_abs_min": null,
-          "adr_ceiling": null,
-          "structural_override": false
-        },
-        "invalid_reasons": []
-      }
-    },
-    {
-      "symbol": "EUR_JPY",
-      "action": "REGIME_BLOCKED",
-      "gates": {
-        "zone": {
-          "passed": true,
-          "tier": 1,
-          "details": "Tier 1 zone at 185.48374 (breakout_flip, strength 100/100)"
-        },
-        "atr": {
-          "passed": true,
-          "consumed_pct": 0.271,
-          "strength": "weak"
-        },
-        "sucker_move": {
-          "passed": true
-        },
-        "pitchfork": {
-          "passed": true,
-          "type": "john_wick",
-          "confidence": "HIGH"
-        },
-        "otr": {
-          "passed": true,
-          "ratio": 0.2156,
-          "category": "marginal"
-        }
-      },
-      "entry_price": 185.99539860000002,
-      "stop_price": 186.52314499999997,
-      "tp1_price": 185.20274,
-      "tp2_price": 184.878,
-      "risk_reward": 2.12,
+      "entry_price": 158.9618946,
+      "stop_price": 158.75109,
+      "tp1_price": 159.1976173,
+      "tp2_price": 159.43334000000002,
+      "risk_reward": 2.24,
       "rejection_reasons": [],
       "all_gates_passed": true,
       "score": 0,
@@ -432,96 +60,38 @@
       "validity": {
         "setup_type": "MEAN_REV",
         "valid": false,
-        "z_score": 0.867,
-        "bb_pos": 0.717,
-        "adr": 1.655,
-        "direction": "short",
-        "touch_count": 2,
+        "z_score": 0.119,
+        "bb_pos": 0.53,
+        "adr": 0.588,
+        "direction": "long",
+        "touch_count": 7,
         "gap_detected": false,
         "gap_direction": "",
         "structural_override": false,
         "checks": {
-          "z_direction_match": true,
-          "z_abs_min": null,
-          "adr_ceiling": false,
+          "z_direction_match": false,
+          "z_abs_min": false,
+          "adr_ceiling": true,
           "structural_override": false
         },
         "invalid_reasons": [
-          "adr_ceiling"
+          "z_direction_mismatch",
+          "low_extreme"
         ]
       }
     },
     {
-      "symbol": "GBP_JPY",
-      "action": "REGIME_BLOCKED",
+      "symbol": "CHF_JPY",
+      "action": "ENTER_SHORT",
       "gates": {
         "zone": {
           "passed": true,
           "tier": 1,
-          "details": "Tier 1 zone at 213.15386 (resistance, strength 65/100)"
+          "details": "Tier 1 zone at 203.89588 (resistance, strength 65/100)"
         },
         "atr": {
           "passed": true,
-          "consumed_pct": 0.234,
-          "strength": "weak"
-        },
-        "sucker_move": {
-          "passed": true
-        },
-        "pitchfork": {
-          "passed": true,
-          "type": "john_wick",
-          "confidence": "HIGH"
-        },
-        "otr": {
-          "passed": true,
-          "ratio": 0.22,
-          "category": "marginal"
-        }
-      },
-      "entry_price": 213.5906388,
-      "stop_price": 214.1831225,
-      "tp1_price": 212.76785999999998,
-      "tp2_price": 212.386,
-      "risk_reward": 2.03,
-      "rejection_reasons": [],
-      "all_gates_passed": true,
-      "score": 0,
-      "score_detail": {},
-      "validity": {
-        "setup_type": "MEAN_REV",
-        "valid": false,
-        "z_score": 0.902,
-        "bb_pos": 0.726,
-        "adr": 1.41,
-        "direction": "short",
-        "touch_count": 5,
-        "gap_detected": false,
-        "gap_direction": "",
-        "structural_override": false,
-        "checks": {
-          "z_direction_match": true,
-          "z_abs_min": null,
-          "adr_ceiling": false,
-          "structural_override": false
-        },
-        "invalid_reasons": [
-          "adr_ceiling"
-        ]
-      }
-    },
-    {
-      "symbol": "AUD_JPY",
-      "action": "REGIME_BLOCKED",
-      "gates": {
-        "zone": {
-          "passed": true,
-          "tier": 1,
-          "details": "Tier 1 zone at 112.37064 (breakout_flip, strength 85/100)"
-        },
-        "atr": {
-          "passed": true,
-          "consumed_pct": 0.157,
+          "consumed_pct": 0.2,
           "strength": "weak"
         },
         "sucker_move": {
@@ -534,15 +104,15 @@
         },
         "otr": {
           "passed": true,
-          "ratio": 0.1365,
-          "category": "acceptable"
+          "ratio": 0.1917,
+          "category": "marginal"
         }
       },
-      "entry_price": 112.5747414,
-      "stop_price": 112.89753999999999,
-      "tp1_price": 111.96764,
-      "tp2_price": 111.572,
-      "risk_reward": 3.11,
+      "entry_price": 203.4986481,
+      "stop_price": 203.794591,
+      "tp1_price": 203.26447405,
+      "tp2_price": 203.03029999999998,
+      "risk_reward": 1.58,
       "rejection_reasons": [],
       "all_gates_passed": true,
       "score": 0,
@@ -550,106 +120,38 @@
       "validity": {
         "setup_type": "MEAN_REV",
         "valid": false,
-        "z_score": 1.125,
-        "bb_pos": 0.781,
-        "adr": 1.377,
+        "z_score": -0.508,
+        "bb_pos": 0.373,
+        "adr": 0.405,
         "direction": "short",
-        "touch_count": 2,
+        "touch_count": 3,
         "gap_detected": false,
         "gap_direction": "",
         "structural_override": false,
         "checks": {
-          "z_direction_match": true,
-          "z_abs_min": null,
-          "adr_ceiling": false,
+          "z_direction_match": false,
+          "z_abs_min": false,
+          "adr_ceiling": true,
           "structural_override": false
         },
         "invalid_reasons": [
-          "adr_ceiling"
+          "z_direction_mismatch",
+          "low_extreme"
         ]
       }
     },
     {
-      "symbol": "CAD_JPY",
-      "action": "NO_TRADE",
-      "gates": {
-        "zone": {
-          "passed": true,
-          "tier": 1,
-          "details": "Tier 1 zone at 114.75151 (breakout_flip, strength 100/100)"
-        },
-        "atr": {
-          "passed": true,
-          "consumed_pct": 0.194,
-          "strength": "weak"
-        },
-        "sucker_move": {
-          "passed": false
-        },
-        "pitchfork": {
-          "passed": false,
-          "type": null,
-          "confidence": null
-        },
-        "otr": {
-          "passed": false,
-          "ratio": 0.6046,
-          "category": "skip"
-        }
-      },
-      "entry_price": 0,
-      "stop_price": 0,
-      "tp1_price": 0,
-      "tp2_price": 0,
-      "risk_reward": 0,
-      "rejection_reasons": [
-        "OTR 60.5% > 25.0% \u2014 spread too costly for box"
-      ],
-      "all_gates_passed": false,
-      "score": 36,
-      "score_detail": {
-        "zone": 30,
-        "atr": 6,
-        "otr": 0,
-        "rr": 0,
-        "pattern": 0,
-        "z_edge": 0,
-        "bb_edge": 0,
-        "structure": 0,
-        "gap": 0
-      },
-      "validity": {
-        "setup_type": "MEAN_REV",
-        "valid": true,
-        "z_score": null,
-        "bb_pos": null,
-        "adr": null,
-        "direction": "long",
-        "touch_count": 0,
-        "gap_detected": false,
-        "gap_direction": "",
-        "structural_override": false,
-        "checks": {
-          "z_direction_match": null,
-          "z_abs_min": null,
-          "adr_ceiling": null,
-          "structural_override": false
-        },
-        "invalid_reasons": []
-      }
-    },
-    {
-      "symbol": "NZD_JPY",
+      "symbol": "EUR_USD",
       "action": "ENTER_SHORT",
       "gates": {
         "zone": {
           "passed": true,
           "tier": 1,
-          "details": "Tier 1 zone at 93.23950 (resistance, strength 65/100)"
+          "details": "Tier 1 zone at 1.18076 (resistance, strength 80/100)"
         },
         "atr": {
           "passed": true,
-          "consumed_pct": 0.219,
+          "consumed_pct": 0.149,
           "strength": "weak"
         },
         "sucker_move": {
@@ -662,42 +164,50 @@
         },
         "otr": {
           "passed": true,
-          "ratio": 0.2134,
-          "category": "marginal"
+          "ratio": 0.1107,
+          "category": "acceptable"
         }
       },
-      "entry_price": 93.1286862,
-      "stop_price": 93.39891499999999,
-      "tp1_price": 92.8350131,
-      "tp2_price": 92.54134,
-      "risk_reward": 2.17,
+      "entry_price": 1.1800119869999999,
+      "stop_price": 1.1814602799999998,
+      "tp1_price": 1.1777966935,
+      "tp2_price": 1.1755814,
+      "risk_reward": 3.06,
       "rejection_reasons": [],
       "all_gates_passed": true,
-      "score": 53,
+      "score": 4,
       "score_detail": {
-        "zone": 30,
-        "atr": 12,
-        "otr": 0,
-        "rr": 5,
-        "pattern": 20,
-        "z_edge": 0,
-        "bb_edge": 0,
-        "structure": 0,
-        "gap": 6,
-        "ct_jw": -5,
-        "ct_t1": -10,
-        "z_align": 5
+        "hr": -8,
+        "age": -4,
+        "stp": -2,
+        "vol": 9,
+        "mom": -5,
+        "dc": -6,
+        "z": 6,
+        "bb": 5,
+        "e50": 0,
+        "e20": 3,
+        "otr": 4,
+        "adr": 4,
+        "dur": 0,
+        "wal": 1,
+        "bdy": -8,
+        "bbs_p": 3,
+        "rsi_p": 3,
+        "pairs": -11,
+        "v3_total": -6,
+        "old_score": 54
       },
       "validity": {
-        "setup_type": "GAP_FADE",
+        "setup_type": "MEAN_REV",
         "valid": true,
-        "z_score": 0.741,
-        "bb_pos": 0.685,
-        "adr": 1.363,
+        "z_score": 0.985,
+        "bb_pos": 0.746,
+        "adr": 0.496,
         "direction": "short",
-        "touch_count": 0,
-        "gap_detected": true,
-        "gap_direction": "up",
+        "touch_count": 7,
+        "gap_detected": false,
+        "gap_direction": "",
         "structural_override": false,
         "checks": {
           "z_direction_match": true,
@@ -709,62 +219,451 @@
       }
     },
     {
-      "symbol": "EUR_NZD",
-      "action": "NO_TRADE",
+      "symbol": "GBP_USD",
+      "action": "ENTER_SHORT",
       "gates": {
         "zone": {
-          "passed": false,
-          "tier": 0,
-          "details": ""
+          "passed": true,
+          "tier": 1,
+          "details": "Tier 1 zone at 1.35857 (resistance, strength 80/100)"
         },
         "atr": {
-          "passed": false,
-          "consumed_pct": 0,
-          "strength": ""
+          "passed": true,
+          "consumed_pct": 0.124,
+          "strength": "weak"
         },
         "sucker_move": {
-          "passed": false
+          "passed": true
         },
         "pitchfork": {
-          "passed": false,
-          "type": null,
-          "confidence": null
+          "passed": true,
+          "type": "john_wick",
+          "confidence": "HIGH"
         },
         "otr": {
-          "passed": false,
-          "ratio": 0,
-          "category": ""
+          "passed": true,
+          "ratio": 0.0862,
+          "category": "acceptable"
         }
       },
-      "entry_price": 0,
-      "stop_price": 0,
-      "tp1_price": 0,
-      "tp2_price": 0,
-      "risk_reward": 0,
-      "rejection_reasons": [
-        "Not tradeable: Spread 0.00078 exceeds threshold 0.00037 for 2 consecutive scans \u2014 entries paused"
-      ],
-      "all_gates_passed": false,
+      "entry_price": 1.357004286,
+      "stop_price": 1.3586572999999997,
+      "tp1_price": 1.353568143,
+      "tp2_price": 1.3501319999999999,
+      "risk_reward": 4.16,
+      "rejection_reasons": [],
+      "all_gates_passed": true,
       "score": 0,
       "score_detail": {},
-      "validity": {}
+      "validity": {
+        "setup_type": "MEAN_REV",
+        "valid": false,
+        "z_score": 0.511,
+        "bb_pos": 0.628,
+        "adr": 0.368,
+        "direction": "short",
+        "touch_count": 5,
+        "gap_detected": false,
+        "gap_direction": "",
+        "structural_override": false,
+        "checks": {
+          "z_direction_match": true,
+          "z_abs_min": false,
+          "adr_ceiling": true,
+          "structural_override": false
+        },
+        "invalid_reasons": [
+          "low_extreme"
+        ]
+      }
+    },
+    {
+      "symbol": "USD_CAD",
+      "action": "ENTER_LONG",
+      "gates": {
+        "zone": {
+          "passed": true,
+          "tier": 1,
+          "details": "Tier 1 zone at 1.37324 (support, strength 65/100)"
+        },
+        "atr": {
+          "passed": true,
+          "consumed_pct": 0.127,
+          "strength": "weak"
+        },
+        "sucker_move": {
+          "passed": true
+        },
+        "pitchfork": {
+          "passed": true,
+          "type": "power_of_towers",
+          "confidence": "HIGH"
+        },
+        "otr": {
+          "passed": true,
+          "ratio": 0.1216,
+          "category": "acceptable"
+        }
+      },
+      "entry_price": 1.3731473010000002,
+      "stop_price": 1.3714471799999999,
+      "tp1_price": 1.3763323,
+      "tp2_price": 1.3792924,
+      "risk_reward": 3.61,
+      "rejection_reasons": [],
+      "all_gates_passed": true,
+      "score": -28,
+      "score_detail": {
+        "hr": -8,
+        "age": -4,
+        "stp": -2,
+        "vol": 9,
+        "mom": -5,
+        "dc": -6,
+        "z": 5,
+        "bb": -2,
+        "e50": 0,
+        "e20": 3,
+        "otr": 4,
+        "adr": -3,
+        "dur": 0,
+        "wal": 1,
+        "bdy": -8,
+        "bbs_p": 3,
+        "rsi_p": -2,
+        "pairs": -13,
+        "v3_total": -28,
+        "old_score": 33
+      },
+      "validity": {
+        "setup_type": "MEAN_REV",
+        "valid": true,
+        "z_score": -1.347,
+        "bb_pos": 0.163,
+        "adr": 1.032,
+        "direction": "long",
+        "touch_count": 5,
+        "gap_detected": false,
+        "gap_direction": "",
+        "structural_override": false,
+        "checks": {
+          "z_direction_match": true,
+          "z_abs_min": true,
+          "adr_ceiling": true,
+          "structural_override": false
+        },
+        "invalid_reasons": []
+      }
+    },
+    {
+      "symbol": "USD_MXN",
+      "action": "ENTER_LONG",
+      "gates": {
+        "zone": {
+          "passed": true,
+          "tier": 1,
+          "details": "Tier 1 zone at 17.28594 (breakout_flip, strength 75/100)"
+        },
+        "atr": {
+          "passed": true,
+          "consumed_pct": 0.105,
+          "strength": "weak"
+        },
+        "sucker_move": {
+          "passed": true
+        },
+        "pitchfork": {
+          "passed": true,
+          "type": "power_of_towers",
+          "confidence": "HIGH"
+        },
+        "otr": {
+          "passed": true,
+          "ratio": 0.1855,
+          "category": "marginal"
+        }
+      },
+      "entry_price": 17.25682551,
+      "stop_price": 17.23382892,
+      "tp1_price": 17.284258355,
+      "tp2_price": 17.3116912,
+      "risk_reward": 2.39,
+      "rejection_reasons": [],
+      "all_gates_passed": true,
+      "score": 0,
+      "score_detail": {},
+      "validity": {
+        "setup_type": "MEAN_REV",
+        "valid": false,
+        "z_score": -0.488,
+        "bb_pos": 0.378,
+        "adr": 0.43,
+        "direction": "long",
+        "touch_count": 3,
+        "gap_detected": false,
+        "gap_direction": "",
+        "structural_override": false,
+        "checks": {
+          "z_direction_match": true,
+          "z_abs_min": false,
+          "adr_ceiling": true,
+          "structural_override": false
+        },
+        "invalid_reasons": [
+          "low_extreme"
+        ]
+      }
+    },
+    {
+      "symbol": "EUR_NZD",
+      "action": "ENTER_LONG",
+      "gates": {
+        "zone": {
+          "passed": true,
+          "tier": 1,
+          "details": "Tier 1 zone at 1.99459 (support, strength 80/100)"
+        },
+        "atr": {
+          "passed": true,
+          "consumed_pct": 0.094,
+          "strength": "weak"
+        },
+        "sucker_move": {
+          "passed": true
+        },
+        "pitchfork": {
+          "passed": true,
+          "type": "power_of_towers",
+          "confidence": "HIGH"
+        },
+        "otr": {
+          "passed": true,
+          "ratio": 0.1906,
+          "category": "marginal"
+        }
+      },
+      "entry_price": 1.995379518,
+      "stop_price": 1.99274526,
+      "tp1_price": 2.001614559,
+      "tp2_price": 2.0078496,
+      "risk_reward": 4.73,
+      "rejection_reasons": [],
+      "all_gates_passed": true,
+      "score": -12,
+      "score_detail": {
+        "hr": -8,
+        "age": -4,
+        "stp": -2,
+        "vol": 9,
+        "mom": -5,
+        "dc": -6,
+        "z": 5,
+        "bb": -2,
+        "e50": 0,
+        "e20": 3,
+        "otr": 0,
+        "adr": 4,
+        "dur": 0,
+        "wal": 1,
+        "bdy": -8,
+        "bbs_p": 3,
+        "rsi_p": -2,
+        "pairs": 0,
+        "v3_total": -12,
+        "old_score": 42
+      },
+      "validity": {
+        "setup_type": "MEAN_REV",
+        "valid": true,
+        "z_score": -1.225,
+        "bb_pos": 0.194,
+        "adr": 0.449,
+        "direction": "long",
+        "touch_count": 6,
+        "gap_detected": false,
+        "gap_direction": "",
+        "structural_override": false,
+        "checks": {
+          "z_direction_match": true,
+          "z_abs_min": true,
+          "adr_ceiling": true,
+          "structural_override": false
+        },
+        "invalid_reasons": []
+      }
     }
   ],
   "box_states": {
     "EUR_USD": {
       "state": "IN_BOX_RANGING",
-      "pdh": 1.1720144000000001,
-      "pdl": 1.16504,
-      "half_box": 0.0034872000000000236,
-      "box_range_pct": 0.006,
-      "atr": 0.00738,
-      "box_age_hours": 1.7,
-      "age_confidence_pct": 87.5,
+      "pdh": 1.1810004,
+      "pdl": 1.1755814,
+      "half_box": 0.0027095000000000313,
+      "box_range_pct": 0.0046,
+      "atr": 0.00726,
+      "box_age_hours": 7.1,
+      "age_confidence_pct": 50.0,
       "entry_paused": false,
       "pause_reason": "",
-      "spread": 0.00017000000000000348,
-      "raw_pdh": 1.17234,
-      "raw_pdl": 1.16504,
+      "spread": 0.00014999999999987246,
+      "raw_pdh": 1.18112,
+      "raw_pdl": 1.17554,
+      "pdh_touches": 7,
+      "pdl_touches": 11,
+      "percentile_filtered": true,
+      "validated": true,
+      "breach_direction": "",
+      "breach_candles": 0,
+      "using_alternative": false,
+      "gates_required": 3,
+      "signal_score": -6,
+      "on_deck": false,
+      "firing": false
+    },
+    "GBP_USD": {
+      "state": "IN_BOX_RANGING",
+      "pdh": 1.3589494,
+      "pdl": 1.3501319999999999,
+      "half_box": 0.004408700000000043,
+      "box_range_pct": 0.0065,
+      "atr": 0.00982,
+      "box_age_hours": 7.1,
+      "age_confidence_pct": 50.0,
+      "entry_paused": false,
+      "pause_reason": "",
+      "spread": 0.0001900000000001345,
+      "raw_pdh": 1.359,
+      "raw_pdl": 1.35004,
+      "pdh_touches": 5,
+      "pdl_touches": 11,
+      "percentile_filtered": true,
+      "validated": true,
+      "breach_direction": "",
+      "breach_candles": 0,
+      "using_alternative": false,
+      "gates_required": 3,
+      "signal_score": 0,
+      "on_deck": false,
+      "firing": false
+    },
+    "USD_JPY": {
+      "state": "IN_BOX_RANGING",
+      "pdh": 159.443,
+      "pdl": 158.6365,
+      "half_box": 0.4032499999999999,
+      "box_range_pct": 0.0051,
+      "atr": 0.86626,
+      "box_age_hours": 7.1,
+      "age_confidence_pct": 50.0,
+      "entry_paused": false,
+      "pause_reason": "",
+      "spread": 0.014999999999986358,
+      "raw_pdh": 159.443,
+      "raw_pdl": 158.602,
+      "pdh_touches": 6,
+      "pdl_touches": 7,
+      "percentile_filtered": true,
+      "validated": true,
+      "breach_direction": "",
+      "breach_candles": 0,
+      "using_alternative": false,
+      "gates_required": 3,
+      "signal_score": 0,
+      "on_deck": false,
+      "firing": false
+    },
+    "USD_CAD": {
+      "state": "IN_BOX_RANGING",
+      "pdh": 1.37932,
+      "pdl": 1.3733722,
+      "half_box": 0.002973900000000085,
+      "box_range_pct": 0.0043,
+      "atr": 0.00598,
+      "box_age_hours": 7.1,
+      "age_confidence_pct": 50.0,
+      "entry_paused": false,
+      "pause_reason": "",
+      "spread": 0.000180000000000069,
+      "raw_pdh": 1.37932,
+      "raw_pdl": 1.37311,
+      "pdh_touches": 11,
+      "pdl_touches": 5,
+      "percentile_filtered": true,
+      "validated": true,
+      "breach_direction": "",
+      "breach_candles": 0,
+      "using_alternative": false,
+      "gates_required": 3,
+      "signal_score": -28,
+      "on_deck": false,
+      "firing": false
+    },
+    "USD_MXN": {
+      "state": "IN_BOX_RANGING",
+      "pdh": 17.3116912,
+      "pdl": 17.2038528,
+      "half_box": 0.05391919999999928,
+      "box_range_pct": 0.0063,
+      "atr": 0.17114,
+      "box_age_hours": 7.1,
+      "age_confidence_pct": 50.0,
+      "entry_paused": false,
+      "pause_reason": "",
+      "spread": 0.004999999999999005,
+      "raw_pdh": 17.31205,
+      "raw_pdl": 17.19871,
+      "pdh_touches": 11,
+      "pdl_touches": 3,
+      "percentile_filtered": true,
+      "validated": true,
+      "breach_direction": "",
+      "breach_candles": 0,
+      "using_alternative": false,
+      "gates_required": 3,
+      "signal_score": 0,
+      "on_deck": false,
+      "firing": false
+    },
+    "CHF_JPY": {
+      "state": "IN_BOX_RANGING",
+      "pdh": 203.88576,
+      "pdl": 203.03029999999998,
+      "half_box": 0.42773000000001105,
+      "box_range_pct": 0.0042,
+      "atr": 1.26484,
+      "box_age_hours": 7.1,
+      "age_confidence_pct": 50.0,
+      "entry_paused": false,
+      "pause_reason": "",
+      "spread": 0.04099999999999682,
+      "raw_pdh": 203.906,
+      "raw_pdl": 203.028,
+      "pdh_touches": 3,
+      "pdl_touches": 7,
+      "percentile_filtered": true,
+      "validated": true,
+      "breach_direction": "",
+      "breach_candles": 0,
+      "using_alternative": false,
+      "gates_required": 3,
+      "signal_score": 0,
+      "on_deck": false,
+      "firing": false
+    },
+    "EUR_NZD": {
+      "state": "IN_BOX_RANGING",
+      "pdh": 2.0078496,
+      "pdl": 1.9946312,
+      "half_box": 0.006609200000000093,
+      "box_range_pct": 0.0066,
+      "atr": 0.01314,
+      "box_age_hours": 7.1,
+      "age_confidence_pct": 50.0,
+      "entry_paused": false,
+      "pause_reason": "",
+      "spread": 0.0006299999999999084,
+      "raw_pdh": 2.00796,
+      "raw_pdl": 1.9943,
       "pdh_touches": 5,
       "pdl_touches": 6,
       "percentile_filtered": true,
@@ -772,713 +671,410 @@
       "breach_direction": "",
       "breach_candles": 0,
       "using_alternative": false,
-      "gates_required": 2,
-      "signal_score": 70,
-      "on_deck": false,
-      "firing": false
-    },
-    "GBP_USD": {
-      "state": "IN_BOX_RANGING",
-      "pdh": 1.34587,
-      "pdl": 1.3381,
-      "half_box": 0.0038849999999999163,
-      "box_range_pct": 0.0058,
-      "atr": 0.00966,
-      "box_age_hours": 1.7,
-      "age_confidence_pct": 87.5,
-      "entry_paused": false,
-      "pause_reason": "",
-      "spread": 0.00022999999999995246,
-      "raw_pdh": 1.34587,
-      "raw_pdl": 1.3381,
-      "pdh_touches": 5,
-      "pdl_touches": 8,
-      "percentile_filtered": false,
-      "validated": true,
-      "breach_direction": "",
-      "breach_candles": 0,
-      "using_alternative": false,
-      "gates_required": 2,
-      "signal_score": 0,
-      "on_deck": false,
-      "firing": false
-    },
-    "USD_JPY": {
-      "state": "IN_BOX_RANGING",
-      "pdh": 158.89088,
-      "pdl": 158.486,
-      "half_box": 0.20244000000000995,
-      "box_range_pct": 0.0025,
-      "atr": 0.86521,
-      "box_age_hours": 1.7,
-      "age_confidence_pct": 87.5,
-      "entry_paused": false,
-      "pause_reason": "",
-      "spread": 0.020999999999986585,
-      "raw_pdh": 159.299,
-      "raw_pdl": 158.486,
-      "pdh_touches": 4,
-      "pdl_touches": 13,
-      "percentile_filtered": true,
-      "validated": true,
-      "breach_direction": "",
-      "breach_candles": 0,
-      "using_alternative": false,
-      "gates_required": 2,
-      "signal_score": 52,
-      "on_deck": false,
-      "firing": false
-    },
-    "USD_CAD": {
-      "state": "IN_BOX_RANGING",
-      "pdh": 1.38608,
-      "pdl": 1.3827718,
-      "half_box": 0.0016540999999999917,
-      "box_range_pct": 0.0024,
-      "atr": 0.00482,
-      "box_age_hours": 1.7,
-      "age_confidence_pct": 87.5,
-      "entry_paused": false,
-      "pause_reason": "",
-      "spread": 0.0002500000000000835,
-      "raw_pdh": 1.38608,
-      "raw_pdl": 1.38048,
-      "pdh_touches": 18,
-      "pdl_touches": 17,
-      "percentile_filtered": true,
-      "validated": true,
-      "breach_direction": "",
-      "breach_candles": 0,
-      "using_alternative": false,
-      "gates_required": 2,
-      "signal_score": 42,
-      "on_deck": false,
-      "firing": false
-    },
-    "USD_MXN": {
-      "state": "IN_BOX_RANGING",
-      "pdh": 17.49154,
-      "pdl": 17.369136,
-      "half_box": 0.06120199999999976,
-      "box_range_pct": 0.007,
-      "atr": 0.17794,
-      "box_age_hours": 1.7,
-      "age_confidence_pct": 87.5,
-      "entry_paused": false,
-      "pause_reason": "",
-      "spread": 0.00841000000000136,
-      "raw_pdh": 17.49154,
-      "raw_pdl": 17.32428,
-      "pdh_touches": 4,
-      "pdl_touches": 2,
-      "percentile_filtered": true,
-      "validated": true,
-      "breach_direction": "",
-      "breach_candles": 0,
-      "using_alternative": false,
-      "gates_required": 2,
-      "signal_score": 42,
-      "on_deck": false,
-      "firing": false
-    },
-    "EUR_JPY": {
-      "state": "NEW_BOX_STANDBY",
-      "pdh": 186.234,
-      "pdl": 184.892,
-      "half_box": 0.6710000000000065,
-      "box_range_pct": 0.0072,
-      "atr": 0.81075,
-      "box_age_hours": 1.7,
-      "age_confidence_pct": 87.5,
-      "entry_paused": false,
-      "pause_reason": "",
-      "spread": 0.03499999999999659,
-      "raw_pdh": 0.0,
-      "raw_pdl": 0.0,
-      "pdh_touches": 0,
-      "pdl_touches": 0,
-      "percentile_filtered": false,
-      "validated": true,
-      "breach_direction": "up",
-      "breach_candles": 2,
-      "using_alternative": true,
-      "gates_required": 2,
-      "signal_score": 0,
-      "on_deck": false,
-      "firing": false
-    },
-    "GBP_JPY": {
-      "state": "NEW_BOX_STANDBY",
-      "pdh": 213.852,
-      "pdl": 212.386,
-      "half_box": 0.7330000000000041,
-      "box_range_pct": 0.0069,
-      "atr": 1.03992,
-      "box_age_hours": 1.7,
-      "age_confidence_pct": 87.5,
-      "entry_paused": false,
-      "pause_reason": "",
-      "spread": 0.04200000000000159,
-      "raw_pdh": 0.0,
-      "raw_pdl": 0.0,
-      "pdh_touches": 0,
-      "pdl_touches": 0,
-      "percentile_filtered": false,
-      "validated": true,
-      "breach_direction": "up",
-      "breach_candles": 2,
-      "using_alternative": true,
-      "gates_required": 2,
-      "signal_score": 0,
-      "on_deck": false,
-      "firing": false
-    },
-    "AUD_JPY": {
-      "state": "NEW_BOX_STANDBY",
-      "pdh": 112.737,
-      "pdl": 111.572,
-      "half_box": 0.582499999999996,
-      "box_range_pct": 0.0103,
-      "atr": 0.84589,
-      "box_age_hours": 1.7,
-      "age_confidence_pct": 87.5,
-      "entry_paused": false,
-      "pause_reason": "",
-      "spread": 0.027000000000001023,
-      "raw_pdh": 0.0,
-      "raw_pdl": 0.0,
-      "pdh_touches": 0,
-      "pdl_touches": 0,
-      "percentile_filtered": false,
-      "validated": true,
-      "breach_direction": "up",
-      "breach_candles": 2,
-      "using_alternative": true,
-      "gates_required": 2,
-      "signal_score": 0,
-      "on_deck": false,
-      "firing": false
-    },
-    "CAD_JPY": {
-      "state": "NEW_BOX_STANDBY",
-      "pdh": 115.236,
-      "pdl": 114.453,
-      "half_box": 0.3915000000000006,
-      "box_range_pct": 0.0068,
-      "atr": 0.60861,
-      "box_age_hours": 1.7,
-      "age_confidence_pct": 87.5,
-      "entry_paused": false,
-      "pause_reason": "",
-      "spread": 0.04200000000000159,
-      "raw_pdh": 0.0,
-      "raw_pdl": 0.0,
-      "pdh_touches": 0,
-      "pdl_touches": 0,
-      "percentile_filtered": false,
-      "validated": true,
-      "breach_direction": "up",
-      "breach_candles": 2,
-      "using_alternative": true,
-      "gates_required": 2,
-      "signal_score": 36,
-      "on_deck": false,
-      "firing": false
-    },
-    "NZD_JPY": {
-      "state": "IN_BOX_RANGING",
-      "pdh": 93.235,
-      "pdl": 92.54134,
-      "half_box": 0.3468299999999971,
-      "box_range_pct": 0.0074,
-      "atr": 0.69946,
-      "box_age_hours": 1.7,
-      "age_confidence_pct": 87.5,
-      "entry_paused": false,
-      "pause_reason": "",
-      "spread": 0.03699999999999193,
-      "raw_pdh": 93.244,
-      "raw_pdl": 92.278,
-      "pdh_touches": 0,
-      "pdl_touches": 0,
-      "percentile_filtered": true,
-      "validated": true,
-      "breach_direction": "",
-      "breach_candles": 0,
-      "using_alternative": false,
-      "gates_required": 2,
-      "signal_score": 63,
-      "on_deck": true,
-      "firing": true
-    },
-    "EUR_NZD": {
-      "state": "IN_BOX_RANGING",
-      "pdh": 2.00499,
-      "pdl": 2.0000756,
-      "half_box": 0.002457199999999826,
-      "box_range_pct": 0.0025,
-      "atr": 0.01211,
-      "box_age_hours": 1.7,
-      "age_confidence_pct": 87.5,
-      "entry_paused": true,
-      "pause_reason": "Spread 0.00078 exceeds threshold 0.00037 for 2 consecutive scans \u2014 entries paused",
-      "spread": 0.0007800000000000029,
-      "raw_pdh": 2.00499,
-      "raw_pdl": 1.9939,
-      "pdh_touches": 15,
-      "pdl_touches": 9,
-      "percentile_filtered": true,
-      "validated": true,
-      "breach_direction": "",
-      "breach_candles": 0,
-      "using_alternative": false,
-      "gates_required": 2,
-      "signal_score": 0,
-      "on_deck": false,
-      "firing": false
-    },
-    "AUD_CAD": {
-      "state": "IN_BOX_RANGING",
-      "pdh": 0.98001,
-      "pdl": 0.9742152000000001,
-      "half_box": 0.0028973999999999944,
-      "box_range_pct": 0.0059,
-      "atr": 0.00729,
-      "box_age_hours": 1.7,
-      "age_confidence_pct": 87.5,
-      "entry_paused": false,
-      "pause_reason": "",
-      "spread": 0.00032999999999994145,
-      "raw_pdh": 0.98001,
-      "raw_pdl": 0.97281,
-      "pdh_touches": 7,
-      "pdl_touches": 7,
-      "percentile_filtered": true,
-      "validated": true,
-      "breach_direction": "",
-      "breach_candles": 0,
-      "using_alternative": false,
-      "gates_required": 2,
-      "signal_score": 52,
+      "gates_required": 3,
+      "signal_score": -12,
       "on_deck": false,
       "firing": false
     }
   },
   "market_summary": {
-    "valid_candidates": 7,
-    "rejected_candidates": 3,
+    "valid_candidates": 3,
+    "rejected_candidates": 4,
     "setup_distribution": {
-      "MEAN_REV": 9,
-      "GAP_FADE": 1
+      "MEAN_REV": 7
     },
     "top_rejection_reasons": [
       {
-        "reason": "adr_ceiling",
-        "count": 3
+        "reason": "low_extreme",
+        "count": 4
+      },
+      {
+        "reason": "z_direction_mismatch",
+        "count": 2
       }
     ]
   },
   "trading_enabled": true,
-  "alltime_pl": -177.57,
+  "alltime_pl": -242.3,
   "screen_results": [
     {
       "instrument": "EUR_USD",
       "viable": true,
-      "pdh": 1.17234,
-      "pdl": 1.16504,
-      "box_range_pips": 73.0,
-      "half_box_pips": 36.5,
-      "daily_atr_pips": 71.9,
-      "atr_consumed_pct": 0.1,
-      "spread_pips": 1.9,
-      "otr_ratio": 0.104,
-      "prior_day_ticks": 139044,
-      "rejection_reason": "RR 1.34 < minimum 1.6 \u2014 insufficient reward"
+      "pdh": 1.18112,
+      "pdl": 1.17554,
+      "box_range_pips": 55.8,
+      "half_box_pips": 27.9,
+      "daily_atr_pips": 75.5,
+      "atr_consumed_pct": 0.477,
+      "spread_pips": 1.5,
+      "otr_ratio": 0.108,
+      "prior_day_ticks": 121435,
+      "rejection_reason": "Score 4 < 20"
     },
     {
       "instrument": "GBP_USD",
       "viable": true,
-      "pdh": 1.34587,
-      "pdl": 1.3381,
-      "box_range_pips": 77.7,
-      "half_box_pips": 38.8,
-      "daily_atr_pips": 94.6,
-      "atr_consumed_pct": 0.087,
-      "spread_pips": 2.5,
-      "otr_ratio": 0.129,
-      "prior_day_ticks": 212680,
+      "pdh": 1.359,
+      "pdl": 1.35004,
+      "box_range_pips": 89.6,
+      "half_box_pips": 44.8,
+      "daily_atr_pips": 99.9,
+      "atr_consumed_pct": 0.361,
+      "spread_pips": 1.7,
+      "otr_ratio": 0.076,
+      "prior_day_ticks": 169889,
       "rejection_reason": null
     },
     {
       "instrument": "USD_JPY",
       "viable": true,
-      "pdh": 159.299,
-      "pdl": 158.486,
-      "box_range_pips": 81.3,
-      "half_box_pips": 40.7,
-      "daily_atr_pips": 86.2,
-      "atr_consumed_pct": 0.13,
+      "pdh": 159.443,
+      "pdl": 158.602,
+      "box_range_pips": 84.1,
+      "half_box_pips": 42.1,
+      "daily_atr_pips": 85.4,
+      "atr_consumed_pct": 0.596,
       "spread_pips": 1.9,
-      "otr_ratio": 0.093,
-      "prior_day_ticks": 203865,
-      "rejection_reason": "RR 1.19 < minimum 1.6 \u2014 insufficient reward"
+      "otr_ratio": 0.09,
+      "prior_day_ticks": 185743,
+      "rejection_reason": null
     },
     {
       "instrument": "AUD_USD",
       "viable": false,
-      "pdh": 0.70949,
-      "pdl": 0.70222,
-      "box_range_pips": 72.7,
-      "half_box_pips": 36.3,
-      "daily_atr_pips": 64.9,
-      "atr_consumed_pct": 0.126,
-      "spread_pips": 1.5,
-      "otr_ratio": 0.083,
-      "prior_day_ticks": 105088,
-      "rejection_reason": "Box too narrow: 72.7 pips (min 100)"
+      "pdh": 0.7148,
+      "pdl": 0.70772,
+      "box_range_pips": 70.8,
+      "half_box_pips": 35.4,
+      "daily_atr_pips": 67.9,
+      "atr_consumed_pct": 0.872,
+      "spread_pips": 1.2,
+      "otr_ratio": 0.068,
+      "prior_day_ticks": 79864,
+      "rejection_reason": "Volume too low: 79,864 ticks (min 80,000)"
     },
     {
       "instrument": "USD_CHF",
       "viable": false,
-      "pdh": 0.7922,
-      "pdl": 0.78792,
-      "box_range_pips": 42.8,
-      "half_box_pips": 21.4,
-      "daily_atr_pips": 57.3,
-      "atr_consumed_pct": 0.167,
-      "spread_pips": 2.8,
-      "otr_ratio": 0.262,
-      "prior_day_ticks": 66410,
-      "rejection_reason": "OTR too high: 26.2% \u2014 spread eats too much of box"
+      "pdh": 0.78407,
+      "pdl": 0.77906,
+      "box_range_pips": 50.1,
+      "half_box_pips": 25.1,
+      "daily_atr_pips": 62.5,
+      "atr_consumed_pct": 0.531,
+      "spread_pips": 1.6,
+      "otr_ratio": 0.128,
+      "prior_day_ticks": 49676,
+      "rejection_reason": "Volume too low: 49,676 ticks (min 50,000)"
     },
     {
       "instrument": "USD_CAD",
       "viable": true,
-      "pdh": 1.38608,
-      "pdl": 1.38048,
-      "box_range_pips": 56.0,
-      "half_box_pips": 28.0,
-      "daily_atr_pips": 53.1,
-      "atr_consumed_pct": 0.092,
-      "spread_pips": 2.4,
-      "otr_ratio": 0.171,
-      "prior_day_ticks": 110172,
-      "rejection_reason": "OTR 27.8% > 25.0% \u2014 spread too costly for box"
+      "pdh": 1.37932,
+      "pdl": 1.37311,
+      "box_range_pips": 62.1,
+      "half_box_pips": 31.1,
+      "daily_atr_pips": 57.4,
+      "atr_consumed_pct": 1.075,
+      "spread_pips": 2.0,
+      "otr_ratio": 0.129,
+      "prior_day_ticks": 99514,
+      "rejection_reason": null
     },
     {
       "instrument": "NZD_USD",
       "viable": false,
-      "pdh": 0.58736,
-      "pdl": 0.58164,
-      "box_range_pips": 57.2,
-      "half_box_pips": 28.6,
-      "daily_atr_pips": 54.7,
-      "atr_consumed_pct": 0.159,
-      "spread_pips": 2.6,
-      "otr_ratio": 0.182,
-      "prior_day_ticks": 76933,
-      "rejection_reason": "Box too narrow: 57.2 pips (min 100)"
+      "pdh": 0.59202,
+      "pdl": 0.5857,
+      "box_range_pips": 63.2,
+      "half_box_pips": 31.6,
+      "daily_atr_pips": 56.0,
+      "atr_consumed_pct": 0.496,
+      "spread_pips": 2.3,
+      "otr_ratio": 0.146,
+      "prior_day_ticks": 61002,
+      "rejection_reason": "Box too narrow: 63.2 pips (min 100)"
     },
     {
       "instrument": "USD_MXN",
       "viable": true,
-      "pdh": 17.49154,
-      "pdl": 17.32428,
-      "box_range_pips": 1672.6,
-      "half_box_pips": 836.3,
-      "daily_atr_pips": 1790.3,
-      "atr_consumed_pct": 0.252,
-      "spread_pips": 90.1,
-      "otr_ratio": 0.215,
-      "prior_day_ticks": 162785,
-      "rejection_reason": "OTR 29.4% > 25.0% \u2014 spread too costly for box"
+      "pdh": 17.31205,
+      "pdl": 17.19871,
+      "box_range_pips": 1133.4,
+      "half_box_pips": 566.7,
+      "daily_atr_pips": 1728.2,
+      "atr_consumed_pct": 0.425,
+      "spread_pips": 44.0,
+      "otr_ratio": 0.155,
+      "prior_day_ticks": 137042,
+      "rejection_reason": null
     },
     {
       "instrument": "EUR_JPY",
-      "viable": true,
-      "pdh": 186.234,
-      "pdl": 184.878,
-      "box_range_pips": 135.6,
-      "half_box_pips": 67.8,
-      "daily_atr_pips": 81.3,
-      "atr_consumed_pct": 0.135,
-      "spread_pips": 3.2,
-      "otr_ratio": 0.094,
-      "prior_day_ticks": 197840,
-      "rejection_reason": "Possible upside breach at 186.02200 (PDH 185.52748) \u2014 monitoring"
+      "viable": false,
+      "pdh": 187.54,
+      "pdl": 187.085,
+      "box_range_pips": 45.5,
+      "half_box_pips": 22.7,
+      "daily_atr_pips": 91.8,
+      "atr_consumed_pct": 0.646,
+      "spread_pips": 2.8,
+      "otr_ratio": 0.246,
+      "prior_day_ticks": 184644,
+      "rejection_reason": "Box too narrow: 45.5 pips (min 90)"
     },
     {
       "instrument": "GBP_JPY",
-      "viable": true,
-      "pdh": 213.852,
-      "pdl": 212.386,
-      "box_range_pips": 146.6,
-      "half_box_pips": 73.3,
-      "daily_atr_pips": 109.1,
-      "atr_consumed_pct": 0.105,
-      "spread_pips": 4.8,
-      "otr_ratio": 0.131,
-      "prior_day_ticks": 203382,
-      "rejection_reason": "Possible upside breach at 213.61100 (PDH 213.14972) \u2014 monitoring"
+      "viable": false,
+      "pdh": 215.788,
+      "pdl": 214.913,
+      "box_range_pips": 87.5,
+      "half_box_pips": 43.8,
+      "daily_atr_pips": 125.3,
+      "atr_consumed_pct": 0.574,
+      "spread_pips": 4.1,
+      "otr_ratio": 0.187,
+      "prior_day_ticks": 190464,
+      "rejection_reason": "Box too narrow: 87.5 pips (min 130)"
     },
     {
       "instrument": "AUD_JPY",
-      "viable": true,
-      "pdh": 112.737,
-      "pdl": 111.572,
-      "box_range_pips": 116.5,
-      "half_box_pips": 58.2,
-      "daily_atr_pips": 85.2,
-      "atr_consumed_pct": 0.183,
-      "spread_pips": 2.7,
-      "otr_ratio": 0.093,
-      "prior_day_ticks": 123886,
-      "rejection_reason": "Possible upside breach at 112.61700 (PDH 112.36328) \u2014 monitoring"
+      "viable": false,
+      "pdh": 113.418,
+      "pdl": 112.619,
+      "box_range_pips": 79.9,
+      "half_box_pips": 40.0,
+      "daily_atr_pips": 93.7,
+      "atr_consumed_pct": 1.118,
+      "spread_pips": 2.4,
+      "otr_ratio": 0.12,
+      "prior_day_ticks": 125412,
+      "rejection_reason": "Box too narrow: 79.9 pips (min 90)"
     },
     {
       "instrument": "CAD_JPY",
-      "viable": true,
-      "pdh": 115.236,
-      "pdl": 114.453,
-      "box_range_pips": 78.3,
-      "half_box_pips": 39.2,
-      "daily_atr_pips": 57.1,
-      "atr_consumed_pct": 0.119,
-      "spread_pips": 4.3,
-      "otr_ratio": 0.22,
-      "prior_day_ticks": 32437,
-      "rejection_reason": "Possible upside breach at 115.11400 (PDH 114.73086) \u2014 monitoring"
+      "viable": false,
+      "pdh": 115.621,
+      "pdl": 115.252,
+      "box_range_pips": 36.9,
+      "half_box_pips": 18.4,
+      "daily_atr_pips": 62.1,
+      "atr_consumed_pct": 0.951,
+      "spread_pips": 3.6,
+      "otr_ratio": 0.39,
+      "prior_day_ticks": 23559,
+      "rejection_reason": "Volume too low: 23,559 ticks (min 30,000)"
     },
     {
       "instrument": "CHF_JPY",
-      "viable": false,
-      "pdh": 201.67,
-      "pdl": 200.199,
-      "box_range_pips": 147.1,
-      "half_box_pips": 73.5,
-      "daily_atr_pips": 114.1,
-      "atr_consumed_pct": 0.228,
-      "spread_pips": 10.9,
-      "otr_ratio": 0.296,
-      "prior_day_ticks": 68132,
-      "rejection_reason": "OTR too high: 29.6% \u2014 spread eats too much of box"
+      "viable": true,
+      "pdh": 203.906,
+      "pdl": 203.028,
+      "box_range_pips": 87.8,
+      "half_box_pips": 43.9,
+      "daily_atr_pips": 128.5,
+      "atr_consumed_pct": 0.399,
+      "spread_pips": 4.1,
+      "otr_ratio": 0.187,
+      "prior_day_ticks": 58242,
+      "rejection_reason": null
     },
     {
       "instrument": "NZD_JPY",
-      "viable": true,
-      "pdh": 93.244,
-      "pdl": 92.278,
-      "box_range_pips": 96.6,
-      "half_box_pips": 48.3,
-      "daily_atr_pips": 69.8,
-      "atr_consumed_pct": 0.194,
-      "spread_pips": 3.8,
-      "otr_ratio": 0.157,
-      "prior_day_ticks": 35208,
-      "rejection_reason": "Max positions (1/1)"
+      "viable": false,
+      "pdh": 93.924,
+      "pdl": 93.231,
+      "box_range_pips": 69.3,
+      "half_box_pips": 34.7,
+      "daily_atr_pips": 74.0,
+      "atr_consumed_pct": 0.607,
+      "spread_pips": 3.4,
+      "otr_ratio": 0.196,
+      "prior_day_ticks": 27358,
+      "rejection_reason": "Volume too low: 27,358 ticks (min 30,000)"
     },
     {
       "instrument": "EUR_GBP",
       "viable": false,
-      "pdh": 0.87136,
-      "pdl": 0.87017,
-      "box_range_pips": 11.9,
-      "half_box_pips": 6.0,
-      "daily_atr_pips": 29.0,
-      "atr_consumed_pct": 0.179,
-      "spread_pips": 1.4,
-      "otr_ratio": 0.471,
-      "prior_day_ticks": 50330,
-      "rejection_reason": "Box too narrow: 11.9 pips (min 95)"
+      "pdh": 0.87142,
+      "pdl": 0.86846,
+      "box_range_pips": 29.6,
+      "half_box_pips": 14.8,
+      "daily_atr_pips": 29.8,
+      "atr_consumed_pct": 0.373,
+      "spread_pips": 1.3,
+      "otr_ratio": 0.176,
+      "prior_day_ticks": 43604,
+      "rejection_reason": "Box too narrow: 29.6 pips (min 95)"
     },
     {
       "instrument": "EUR_CAD",
       "viable": false,
-      "pdh": 1.61936,
-      "pdl": 1.61349,
-      "box_range_pips": 58.7,
-      "half_box_pips": 29.3,
-      "daily_atr_pips": 71.2,
-      "atr_consumed_pct": 0.125,
-      "spread_pips": 4.4,
-      "otr_ratio": 0.3,
-      "prior_day_ticks": 127689,
-      "rejection_reason": "OTR too high: 30.0% \u2014 spread eats too much of box"
+      "pdh": 1.62488,
+      "pdl": 1.6208,
+      "box_range_pips": 40.8,
+      "half_box_pips": 20.4,
+      "daily_atr_pips": 73.5,
+      "atr_consumed_pct": 0.718,
+      "spread_pips": 3.5,
+      "otr_ratio": 0.343,
+      "prior_day_ticks": 81376,
+      "rejection_reason": "OTR too high: 34.3% \u2014 spread eats too much of box"
     },
     {
       "instrument": "EUR_AUD",
       "viable": false,
-      "pdh": 1.6617,
-      "pdl": 1.65082,
-      "box_range_pips": 108.8,
-      "half_box_pips": 54.4,
-      "daily_atr_pips": 99.1,
-      "atr_consumed_pct": 0.226,
-      "spread_pips": 4.5,
-      "otr_ratio": 0.165,
-      "prior_day_ticks": 193762,
-      "rejection_reason": "Box too narrow: 108.8 pips (min 110)"
+      "pdh": 1.66177,
+      "pdl": 1.65154,
+      "box_range_pips": 102.3,
+      "half_box_pips": 51.1,
+      "daily_atr_pips": 105.7,
+      "atr_consumed_pct": 1.155,
+      "spread_pips": 4.1,
+      "otr_ratio": 0.16,
+      "prior_day_ticks": 166760,
+      "rejection_reason": "Box too narrow: 102.3 pips (min 110)"
     },
     {
       "instrument": "EUR_NZD",
       "viable": true,
-      "pdh": 2.00499,
-      "pdl": 1.9939,
-      "box_range_pips": 110.9,
-      "half_box_pips": 55.4,
-      "daily_atr_pips": 120.8,
-      "atr_consumed_pct": 0.245,
-      "spread_pips": 6.8,
-      "otr_ratio": 0.245,
-      "prior_day_ticks": 88059,
-      "rejection_reason": "OTR 61.0% > 25.0% \u2014 spread too costly for box"
+      "pdh": 2.00796,
+      "pdl": 1.9943,
+      "box_range_pips": 136.6,
+      "half_box_pips": 68.3,
+      "daily_atr_pips": 123.2,
+      "atr_consumed_pct": 0.479,
+      "spread_pips": 6.3,
+      "otr_ratio": 0.184,
+      "prior_day_ticks": 51261,
+      "rejection_reason": null
     },
     {
       "instrument": "EUR_CHF",
       "viable": false,
-      "pdh": 0.92498,
-      "pdl": 0.92178,
-      "box_range_pips": 32.0,
-      "half_box_pips": 16.0,
-      "daily_atr_pips": 40.8,
-      "atr_consumed_pct": 0.243,
-      "spread_pips": 1.9,
-      "otr_ratio": 0.238,
-      "prior_day_ticks": 58334,
-      "rejection_reason": "Box too narrow: 32.0 pips (min 60)"
+      "pdh": 0.92188,
+      "pdl": 0.91944,
+      "box_range_pips": 24.4,
+      "half_box_pips": 12.2,
+      "daily_atr_pips": 43.7,
+      "atr_consumed_pct": 0.668,
+      "spread_pips": 2.2,
+      "otr_ratio": 0.361,
+      "prior_day_ticks": 48494,
+      "rejection_reason": "Box too narrow: 24.4 pips (min 60)"
     },
     {
       "instrument": "GBP_CAD",
       "viable": false,
-      "pdh": 1.85914,
-      "pdl": 1.85324,
-      "box_range_pips": 59.0,
-      "half_box_pips": 29.5,
-      "daily_atr_pips": 97.2,
-      "atr_consumed_pct": 0.105,
-      "spread_pips": 6.7,
-      "otr_ratio": 0.454,
-      "prior_day_ticks": 121183,
-      "rejection_reason": "Box too narrow: 59.0 pips (min 80)"
+      "pdh": 1.86874,
+      "pdl": 1.8619,
+      "box_range_pips": 68.4,
+      "half_box_pips": 34.2,
+      "daily_atr_pips": 98.9,
+      "atr_consumed_pct": 0.677,
+      "spread_pips": 4.9,
+      "otr_ratio": 0.287,
+      "prior_day_ticks": 56985,
+      "rejection_reason": "Box too narrow: 68.4 pips (min 80)"
     },
     {
       "instrument": "GBP_AUD",
       "viable": false,
-      "pdh": 1.90822,
-      "pdl": 1.896,
-      "box_range_pips": 122.2,
-      "half_box_pips": 61.1,
-      "daily_atr_pips": 115.0,
-      "atr_consumed_pct": 0.196,
-      "spread_pips": 7.0,
-      "otr_ratio": 0.229,
-      "prior_day_ticks": 171969,
-      "rejection_reason": "Box too narrow: 122.2 pips (min 150)"
+      "pdh": 1.90918,
+      "pdl": 1.90058,
+      "box_range_pips": 86.0,
+      "half_box_pips": 43.0,
+      "daily_atr_pips": 118.5,
+      "atr_consumed_pct": 1.201,
+      "spread_pips": 5.6,
+      "otr_ratio": 0.26,
+      "prior_day_ticks": 131612,
+      "rejection_reason": "Box too narrow: 86.0 pips (min 150)"
     },
     {
       "instrument": "GBP_NZD",
       "viable": false,
-      "pdh": 2.30277,
-      "pdl": 2.28964,
-      "box_range_pips": 131.3,
-      "half_box_pips": 65.7,
-      "daily_atr_pips": 128.7,
-      "atr_consumed_pct": 0.277,
-      "spread_pips": 11.7,
-      "otr_ratio": 0.356,
-      "prior_day_ticks": 92693,
-      "rejection_reason": "OTR too high: 35.6% \u2014 spread eats too much of box"
+      "pdh": 2.30586,
+      "pdl": 2.29481,
+      "box_range_pips": 110.5,
+      "half_box_pips": 55.3,
+      "daily_atr_pips": 128.3,
+      "atr_consumed_pct": 0.578,
+      "spread_pips": 10.9,
+      "otr_ratio": 0.395,
+      "prior_day_ticks": 45870,
+      "rejection_reason": "Volume too low: 45,870 ticks (min 50,000)"
     },
     {
       "instrument": "GBP_CHF",
       "viable": false,
-      "pdh": 1.06227,
-      "pdl": 1.05858,
-      "box_range_pips": 36.9,
-      "half_box_pips": 18.4,
-      "daily_atr_pips": 47.3,
-      "atr_consumed_pct": 0.275,
-      "spread_pips": 6.4,
-      "otr_ratio": 0.694,
-      "prior_day_ticks": 105443,
-      "rejection_reason": "Box too narrow: 36.9 pips (min 100)"
+      "pdh": 1.06032,
+      "pdl": 1.05591,
+      "box_range_pips": 44.1,
+      "half_box_pips": 22.1,
+      "daily_atr_pips": 48.8,
+      "atr_consumed_pct": 0.739,
+      "spread_pips": 3.9,
+      "otr_ratio": 0.354,
+      "prior_day_ticks": 75000,
+      "rejection_reason": "Box too narrow: 44.1 pips (min 100)"
     },
     {
       "instrument": "AUD_CAD",
-      "viable": true,
-      "pdh": 0.98001,
-      "pdl": 0.97281,
-      "box_range_pips": 72.0,
-      "half_box_pips": 36.0,
-      "daily_atr_pips": 68.3,
-      "atr_consumed_pct": 0.161,
-      "spread_pips": 3.2,
-      "otr_ratio": 0.178,
-      "prior_day_ticks": 34453,
-      "rejection_reason": "RR 1.05 < minimum 1.6 \u2014 insufficient reward"
+      "viable": false,
+      "pdh": 0.98226,
+      "pdl": 0.97568,
+      "box_range_pips": 65.8,
+      "half_box_pips": 32.9,
+      "daily_atr_pips": 68.6,
+      "atr_consumed_pct": 0.775,
+      "spread_pips": 2.5,
+      "otr_ratio": 0.152,
+      "prior_day_ticks": 14906,
+      "rejection_reason": "Volume too low: 14,906 ticks (min 30,000)"
     },
     {
       "instrument": "AUD_NZD",
       "viable": false,
-      "pdh": 1.21117,
-      "pdl": 1.20473,
-      "box_range_pips": 64.4,
-      "half_box_pips": 32.2,
-      "daily_atr_pips": 57.9,
-      "atr_consumed_pct": 0.406,
-      "spread_pips": 4.3,
-      "otr_ratio": 0.267,
-      "prior_day_ticks": 125066,
-      "rejection_reason": "OTR too high: 26.7% \u2014 spread eats too much of box"
+      "pdh": 1.21008,
+      "pdl": 1.20424,
+      "box_range_pips": 58.4,
+      "half_box_pips": 29.2,
+      "daily_atr_pips": 61.0,
+      "atr_consumed_pct": 1.073,
+      "spread_pips": 3.4,
+      "otr_ratio": 0.233,
+      "prior_day_ticks": 106480,
+      "rejection_reason": "Box too narrow: 58.4 pips (min 60)"
     },
     {
       "instrument": "AUD_CHF",
       "viable": false,
-      "pdh": 0.56016,
-      "pdl": 0.55568,
-      "box_range_pips": 44.8,
-      "half_box_pips": 22.4,
-      "daily_atr_pips": 37.7,
-      "atr_consumed_pct": 0.27,
-      "spread_pips": 3.8,
-      "otr_ratio": 0.339,
-      "prior_day_ticks": 31456,
-      "rejection_reason": "OTR too high: 33.9% \u2014 spread eats too much of box"
+      "pdh": 0.55724,
+      "pdl": 0.55377,
+      "box_range_pips": 34.7,
+      "half_box_pips": 17.3,
+      "daily_atr_pips": 41.1,
+      "atr_consumed_pct": 1.181,
+      "spread_pips": 1.8,
+      "otr_ratio": 0.207,
+      "prior_day_ticks": 21908,
+      "rejection_reason": "Volume too low: 21,908 ticks (min 30,000)"
     }
   ],
   "blockers": {
-    "EUR_JPY": {
-      "type": "regime_blocked",
-      "message": "Regime BLOCKED (-4) \u2014 BLOCKED score=-4.0 | box_acceptance_above(-2): 6 consecutive closes above PDH 185.52748 \u2014 price holding outside box (last close 186.01400) | rejection_failed(-2): 8.8w failed rejections at box walls in last 24H \u2014 wall not holding (clean=0.3w weak=0.0w)"
-    },
-    "GBP_JPY": {
-      "type": "regime_blocked",
-      "message": "Regime BLOCKED (-3) \u2014 BLOCKED score=-3.0 | box_acceptance_above(-2): 6 consecutive closes above PDH 213.14972 \u2014 price holding outside box (last close 213.60900) | rejection_failed(-2): 7.8w failed rejections at box walls in last 24H \u2014 wall not holding (clean=0.3w weak=1.0w) | compression(+1): ATR 0.8x baseline \u2014 compression, reversal conditions favorable"
-    },
-    "AUD_JPY": {
-      "type": "regime_blocked",
-      "message": "Regime BLOCKED (-4) \u2014 BLOCKED score=-4.0 | box_acceptance_above(-2): 6 consecutive closes above PDH 112.36328 \u2014 price holding outside box (last close 112.60400) | rejection_failed(-2): 6.5w failed rejections at box walls in last 24H \u2014 wall not holding (clean=0.1w weak=0.0w)"
-    },
-    "EUR_NZD": {
-      "type": "not_tradeable",
-      "message": "Spread 0.00078 exceeds threshold 0.00037 for 2 consecutive scans \u2014 entries paused"
-    },
-    "NZD_JPY": {
-      "type": "max_positions",
-      "message": "Max positions (1/1)"
+    "EUR_USD": {
+      "type": "score_blocked",
+      "message": "Score 4 < 20"
     }
   },
   "bb_states": {
-    "USD_JPY": "BREAKOUT_UP",
-    "AUD_CAD": "NORMAL",
-    "EUR_USD": "STRETCH_DOWN",
-    "USD_CAD": "NORMAL",
+    "USD_JPY": "NORMAL",
+    "CHF_JPY": "NORMAL",
+    "EUR_USD": "REJECTION_LONG",
+    "GBP_USD": "STRETCH_DOWN",
+    "USD_CAD": "BREAKOUT_UP",
     "USD_MXN": "NORMAL",
-    "NZD_JPY": "NORMAL",
-    "EUR_NZD": "NORMAL",
-    "EUR_JPY": "NORMAL",
-    "GBP_JPY": "NORMAL",
-    "AUD_JPY": "NORMAL",
-    "CAD_JPY": "NORMAL"
+    "EUR_NZD": "NORMAL"
   }
 }

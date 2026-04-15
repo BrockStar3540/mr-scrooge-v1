@@ -116,7 +116,7 @@ CONFIG = {
     'max_concurrent_positions': 1,       # 1 max — concentrate capital in best setup
     'max_eur_positions':        2,       # EUR exposure cap — EUR trending; max 2 EUR pairs open
     'max_daily_loss_pct':       0.075,   # 7.5% daily halt — allows 5 full stops at 1.5% risk before shutdown
-    'min_risk_reward':          1.35,    # Reduced to increase qualified setups while keeping RR > 1.5 floor
+    'min_risk_reward':          1.0,     # RECIPE FIX: RR same for W and L. Lowered from 1.35 to 1.0
 
     # Timing
     'scan_interval_seconds':    300,     # 5 minutes
@@ -128,7 +128,7 @@ CONFIG = {
     'hourly_green_exit_min_pnl': 0.002,  # 0.2% net profit required (was 0.0 — fired on trivial moves)
 
     # Stop loss floor — minimum SL distance to prevent fakeout stops
-    'sl_floor_pct':             0.0025,  # 0.25% min SL distance from entry
+    'sl_floor_pct':             0.0010,  # RECIPE FIX: tighter stops win more. Lowered from 0.25% to 0.10%
 
     # Execution
     'limit_timeout_minutes':    5,       # Cancel unfilled limit after 5 min
@@ -152,7 +152,7 @@ CONFIG = {
     'atr_high_confidence_pct': 0.60,    # 60% — London/NY sessions only; Frank's 0.40 "fix" still blocked Sydney/Tokyo (those sessions hit <20% ATR)
     'atr_valid_pct':           0.60,    # Restored from 0.40 — only trade sessions with real momentum
     'atr_minimum_pct':         0.15,    # Below 15% = ignore (lowered from 20% — Frank 2026-02-27)
-    'max_spread_pct_of_half':  0.30,    # Pause entries if spread > 30% of half-box (raised from 15% — was blocking all Sydney/Sunday entries; OTR tiers are the real gate)
+    'max_spread_pct_of_half':  0.10,    # RECIPE FIX: spread >10% of half = 20% WR. Lowered from 30%
     # Spread spike thresholds — 24h forex has 3-4x London spreads during Sydney/Sunday; that's not a spike, it's normal thin liquidity
     'spread_spike_threshold':  4.0,     # Was 2.5 — raised because Sunday/Sydney legitimately runs 3-4x London baselines
     'high_volatility_atr_mult':    99,       # disabled — forces 5M bars for pitchfork (1H candle SL too wide)
@@ -1172,22 +1172,18 @@ def process_instrument(symbol: str, ctx: dict) -> Optional[dict]:
         ctx.setdefault('_blockers', {})[symbol] = {'type': 'regime_blocked', 'message': f'Regime BLOCKED ({regime_assessment.score:+.0f}) — {regime_assessment.summary()}'}
         return None
 
-    # FIX 2 (2026-04-14): Entry floor — require regime score >= -1
+    # V3 CHANGE: Regime floor REMOVED — V3 point system handles quality filtering.
+    # Regime only blocks on BLOCKED state (above). CAUTION/RESTRICTED pass through
+    # to V3 scorer which decides based on 43 factors + pair layer.
     if regime_assessment.score < -1:
         decision_log.info(
-            f'{symbol}: REGIME_FLOOR score={regime_assessment.score:+.1f} — '
-            f'entry suppressed (need >= -1)'
+            f'{symbol}: REGIME_OBSERVE score={regime_assessment.score:+.1f} — '
+            f'passing to V3 scorer (regime floor removed)'
         )
-        signal.action   = 'REGIME_FLOOR'
-        signal.wait_for = f'REGIME_FLOOR ({regime_assessment.score:+.0f}) — need score >= -1'
-        ctx.setdefault('_blockers', {})[symbol] = {
-            'type': 'regime_floor',
-            'message': f'REGIME_FLOOR ({regime_assessment.score:+.0f}) — need >= -1'
-        }
-        return None
 
-    # FIX 3 (2026-04-14): BB exhaustion gate — reversals require EXTREME or REJECTION
-    # This is the core filter: don't fade trends, only fade exhaustion.
+    # V3 CHANGE: BB exhaustion gate REMOVED — V3 point system handles BB state scoring.
+    # BB state is scored in V3: NORM=+3, REJ=+2, STRETCH=BLOCK, etc.
+    # The V3 scorer will penalize/reward based on BB state without hard-blocking.
     _bb_ctx = ctx['regime']._last_bb.get(symbol)
     if _bb_ctx:
         _bb_state = _bb_ctx.state.value
@@ -1195,15 +1191,9 @@ def process_instrument(symbol: str, ctx: dict) -> Optional[dict]:
         _exhaustion_states = ('EXTREME_UP', 'EXTREME_DOWN', 'REJECTION_SHORT', 'REJECTION_LONG')
         if _is_reversal and _bb_state not in _exhaustion_states:
             decision_log.info(
-                f'{symbol}: BB_NO_EXHAUSTION — bb_state={_bb_state}, '
-                f'reversal blocked (need EXTREME or REJECTION)'
+                f'{symbol}: BB_OBSERVE — bb_state={_bb_state}, '
+                f'passing to V3 scorer (exhaustion gate removed)'
             )
-            signal.action   = 'BB_NO_EXHAUSTION'
-            signal.wait_for = f'BB state {_bb_state} — no exhaustion, reversal blocked'
-            ctx.setdefault('_blockers', {})[symbol] = {
-                'type': 'bb_no_exhaustion',
-                'message': f'BB {_bb_state} — need EXTREME/REJECTION for reversal'
-            }
             
             # Trend participation fallback
             if _bb_state in ('TREND_UP', 'TREND_DOWN', 'STRETCH_UP', 'STRETCH_DOWN'):

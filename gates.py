@@ -1829,6 +1829,22 @@ class SignalEngine:
             except Exception:
                 pass
 
+        # RECIPE FIX: RSI computation for neutral filter
+        rsi_14 = None
+        if bars_5m is not None and len(bars_5m) >= 15:
+            try:
+                _closes = bars_5m['close'].astype(float)
+                _changes = _closes.diff().iloc[-14:]
+                _gains = _changes.clip(lower=0).mean()
+                _losses = (-_changes.clip(upper=0)).mean()
+                if _losses > 0:
+                    _rs = _gains / _losses
+                    rsi_14 = round(100 - (100 / (1 + _rs)), 1)
+                else:
+                    rsi_14 = 100.0
+            except Exception:
+                pass
+
         direction     = 'short' if sig.action == 'ENTER_SHORT' else 'long'
         gap_detected  = daily_box.gap_detected  if daily_box else False
         gap_direction = daily_box.gap_direction if daily_box else ''
@@ -1868,11 +1884,20 @@ class SignalEngine:
                         f'({direction} but z={z_score:.3f})'
                     )
                     invalid_reasons.append('z_direction_mismatch')
-                    self._store_validity(sig, z_score, bb_pos, adr, direction,
-                                        setup_type, touch_count, gap_detected, gap_direction,
-                                        structural_override, z_dir_pass, z_abs_pass, adr_pass,
-                                        invalid_reasons, valid=False)
-                    return 0
+
+            # RECIPE FIX: RSI 45-55 neutral = no conviction = 29% WR
+            if rsi_14 is not None and 45 <= rsi_14 <= 55:
+                log.info(
+                    f'{sig.symbol}: VALIDITY_REJECT neutral_rsi '
+                    f'(rsi={rsi_14:.1f}, range 45-55 = no conviction)'
+                )
+                invalid_reasons.append('neutral_rsi')
+                self._store_validity(sig, z_score, bb_pos, adr, direction,
+                                    setup_type, touch_count, gap_detected, gap_direction,
+                                    structural_override, z_dir_pass, z_abs_pass, adr_pass,
+                                    invalid_reasons, valid=False)
+                return 0
+
 
             if adr is not None:
                 adr_pass = not (adr > 1.3 and not gap_aligned)
@@ -2013,6 +2038,26 @@ class SignalEngine:
                 _za_pts = 5
                 pts += _za_pts; _sd['z_align'] = _za_pts
 
+        # ── RECIPE FIX: BB middle penalty (BB 0.4-0.6 = 27% WR) ─────
+        _bb_mid_pts = 0
+        if bb_pos is not None and 0.40 <= bb_pos <= 0.60:
+            _bb_mid_pts = -15
+            pts += _bb_mid_pts; _sd['bb_middle'] = _bb_mid_pts
+
+        # ── RECIPE FIX: Directional conviction (4+ candles = 100% WR) ──
+        _conv_pts = 0
+        _dir_count = 0
+        if sig.sucker_move and hasattr(sig.sucker_move, 'directional_count'):
+            _dir_count = sig.sucker_move.directional_count or 0
+        elif sig.sucker_move and hasattr(sig.sucker_move, 'count'):
+            _dir_count = sig.sucker_move.count or 0
+        if _dir_count >= 4:
+            _conv_pts = 10
+        elif _dir_count <= 1:
+            _conv_pts = -10
+        if _conv_pts != 0:
+            pts += _conv_pts; _sd['conviction'] = _conv_pts
+
         # ── Store detail for dashboard ───────────────────────────────
         self._store_validity(sig, z_score, bb_pos, adr, direction,
                              setup_type, touch_count, gap_detected, gap_direction,
@@ -2023,7 +2068,44 @@ class SignalEngine:
         except Exception:
             pass
 
-        return pts
+        # === V3 HYBRID SCORER OVERRIDE ===
+        try:
+            from v3_scorer import score_v3_hybrid
+            v3_inputs = {
+                "hour": self._entry_hour if hasattr(self, "_entry_hour") else 12,
+                "bage": self._box_age if hasattr(self, "_box_age") else 24,
+                "ns": sig.stop_price and abs(sig.entry_price - sig.stop_price) / (0.01 if "JPY" in sig.symbol else 0.0001) if sig.entry_price and sig.stop_price else 10,
+                "vr": self._vol_ratio if hasattr(self, "_vol_ratio") else 1.0,
+                "mom": self._momentum if hasattr(self, "_momentum") else 0,
+                "dc": sig.sucker_move.directional_count if sig.sucker_move and hasattr(sig.sucker_move, "directional_count") else (sig.sucker_move.count if sig.sucker_move and hasattr(sig.sucker_move, "count") else 0),
+                "zs": z_score if z_score is not None else 0,
+                "bbp": bb_pos if bb_pos is not None else 0.5,
+                "e50d": 50, "e20d": 25,
+                "otr": sig.otr_ratio * 100 if sig.otr_ratio else 15,
+                "adr": adr if adr is not None else 0.5,
+                "dur": 0, "wp": 0.4,
+                "bp": sig.pitchfork.body_pct if sig.pitchfork and hasattr(sig.pitchfork, "body_pct") else 0.5,
+                "bbs": "NORM", "rsi": rsi_14 if rsi_14 is not None else 50,
+                "sp": 2.0,
+            }
+            v3_score, v3_blocks, v3_bd = score_v3_hybrid(v3_inputs)
+            if v3_blocks:
+                log.info(f"{sig.symbol}: V3_BLOCKED {v3_blocks} (old_score={pts})")
+                try:
+                    sig.score_detail = {"V3_BLOCKED": ",".join(v3_blocks), "old_score": pts}
+                except: pass
+                return 0
+            log.info(f"{sig.symbol}: V3_SCORE={v3_score} (old={pts}) pairs={v3_bd.get("pairs",0)}")
+            try:
+                # OVERWRITE old score_detail with V3 breakdown for dashboard
+                sig.score_detail = v3_bd
+                sig.score_detail["v3_total"] = v3_score
+                sig.score_detail["old_score"] = pts
+            except: pass
+            return v3_score
+        except Exception as e:
+            log.warning(f"V3 scorer failed: {e} — falling back to old score {pts}")
+            return pts
 
     def _store_validity(self, sig, z_score, bb_pos, adr, direction, setup_type,
                         touch_count, gap_detected, gap_direction, structural_override,

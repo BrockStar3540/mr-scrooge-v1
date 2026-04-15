@@ -1020,20 +1020,45 @@ function renderSignals() {
       ${(vd.invalid_reasons || []).map(r => `<span class="vchk fail">${r}</span>`).join('')}
     </div>` : '';
 
-    // Score breakdown
-    const _sdKeys = ['zone','atr','otr','rr','pattern','z_edge','bb_edge','structure','gap','ranging','ct_pot','ct_jw','ct_t1','ct_t2','z_align','regime'];
-    const _sdLabels = {zone:'Zone',atr:'ATR',otr:'OTR',rr:'R:R',pattern:'Pattern',z_edge:'Z-edge',bb_edge:'BB-edge',structure:'Struct',gap:'Gap',ranging:'RNG',ct_pot:'CT+PoT',ct_jw:'CT+JW',ct_t1:'CT-T1',ct_t2:'CT-T2',z_align:'Z-Align',regime:'Regime'};
+    // V3 Hybrid Scorer — layered breakdown
+    const _v3Layers = [
+      { label: 'MARKET STATE', keys: ['hr','age','vol','rng'], color: '#4a9eff' },
+      { label: 'ENTRY QUALITY', keys: ['cnv','mom','stp','sma','e50','e20','wal','bdy'], color: '#50c878' },
+      { label: 'BB / Z / RSI', keys: ['z','bb','bbs_p','rsi_p'], color: '#daa520' },
+      { label: 'COST / CONTEXT', keys: ['otr','adr','dur'], color: '#cd853f' },
+      { label: 'PAIR LAYER', keys: ['pairs'], color: '#ff6b6b' },
+    ];
+    const _v3Labels = {hr:'Hour',age:'BoxAge',vol:'VolRatio',rng:'Ranging',cnv:'Conviction',mom:'Momentum',stp:'NatStop',sma:'SMA20',e50:'EMA50',e20:'EMA20',wal:'WallProx',bdy:'Body%',z:'Z-Score',bb:'BBpos',bbs_p:'BBState',rsi_p:'RSI',otr:'OTR',adr:'ADR',dur:'Duration',pairs:'PairBonus',v3_total:'V3 TOTAL',old_score:'OldScore',V3_BLOCKED:'BLOCKED'};
     let breakdownHtml = '';
     if (Object.keys(sd).length > 0) {
-      const rows = _sdKeys.map(k => {
-        const v = sd[k] || 0;
-        const cls = v === 0 ? 'zero' : v > 0 ? 'pos' : 'neg';
-        return `<div class="sbd-item"><span class="sbd-k">${_sdLabels[k]||k}</span><span class="sbd-v ${cls}">${v}</span></div>`;
-      }).join('');
-      breakdownHtml = `<div class="score-breakdown">
-        <div class="sbd-title">▸ Score breakdown (${_sc}pts)</div>
-        <div class="sbd-grid">${rows}</div>
-      </div>`;
+      // Check for V3 blocked
+      if (sd.V3_BLOCKED) {
+        breakdownHtml = `<div class="score-breakdown" style="border-color:#ff4444">
+          <div class="sbd-title" style="color:#ff4444">⛔ V3 BLOCKED: ${sd.V3_BLOCKED}</div>
+          <div style="color:var(--dim);font-size:11px;padding:4px 8px">Old score was ${sd.old_score || '?'} — V3 hard block overrides</div>
+        </div>`;
+      } else {
+        let layerRows = '';
+        for (const layer of _v3Layers) {
+          const items = layer.keys.map(k => {
+            const v = sd[k];
+            if (v === undefined || v === null) return '';
+            const cls = v === 0 ? 'zero' : v > 0 ? 'pos' : 'neg';
+            const isPair = k === 'pairs';
+            const style = isPair && v !== 0 ? `font-weight:bold;font-size:14px` : '';
+            return `<div class="sbd-item"><span class="sbd-k">${_v3Labels[k]||k}</span><span class="sbd-v ${cls}" style="${style}">${v > 0 ? '+'+v : v}</span></div>`;
+          }).filter(x => x).join('');
+          if (items) {
+            layerRows += `<div style="margin-bottom:4px"><div style="font-size:9px;color:${layer.color};letter-spacing:1px;margin-bottom:2px">${layer.label}</div><div class="sbd-grid">${items}</div></div>`;
+          }
+        }
+        const v3Total = sd.v3_total !== undefined ? sd.v3_total : _sc;
+        const totalColor = v3Total >= 65 ? '#50c878' : v3Total >= 50 ? '#daa520' : '#ff6b6b';
+        breakdownHtml = `<div class="score-breakdown">
+          <div class="sbd-title">▸ V3 Score: <span style="color:${totalColor};font-size:16px;font-weight:bold">${v3Total}</span> pts ${sd.old_score !== undefined ? `<span style="color:var(--dim);font-size:10px">(old: ${sd.old_score})</span>` : ''}</div>
+          ${layerRows}
+        </div>`;
+      }
     }
 
     return `<div class="signal-card${allGatesPassed && !isRegimeBlock ? ' ready-card' : ''}">

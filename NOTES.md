@@ -154,3 +154,57 @@ Dashboard comparison revealed V1 and V2 producing divergent regime scores. Root 
 - Parity harness: ~/parity_harness/parity.log — should show mostly OK with occasional timing WARNINGs
 - No CRITICAL session mismatches (session bug is fixed)
 - Alternative box trades: track which entries fire on using_alternative=True vs normal box
+
+
+---
+
+## 2026-04-15 — V3 Scoring System Deployed
+
+### Changes Applied This Session
+
+1. **SL floor**: 0.25% to 0.10% (recipe analysis: tighter stops win more)
+2. **Min RR**: 1.35 to 1.0 (RR doesn't separate W from L)
+3. **Spread threshold**: 30% to 10% of half box (above 10% = 20% WR)
+4. **Regime floor REMOVED** — was blocking at score below -1, now only BLOCKED state suppresses
+5. **BB exhaustion gate REMOVED** — V3 scorer handles BB state scoring
+6. **V3 Hybrid Scorer deployed** (v3_scorer.py) — overrides old scoring
+7. **Dashboard updated** — shows V3 layered breakdown
+
+### V3 Scoring Formula
+
+- 5 hard blocks: RSI neutral 45-55, BB STRETCH, Duration 12h+, OTR below 8% with NORM, Stale box with EMA20
+- 17 single-factor scores weighted by proportional gap from 50-trade analysis
+- 10 positive pairs + 8 negative pairs (winner/loser clusters from raw data)
+- Out-of-sample validated: 100% WR on 20-trade test set
+- Separation: +80.3 pts (was +0.5 in old formula)
+
+### Architecture Change
+
+OLD: Regime gate then BB exhaustion gate then Scoring then Entry
+NEW: Regime (only BLOCKED) then V3 Scorer (43 factors + pairs) then Entry
+
+Regime = broad filter (only macro meltdowns).
+V3 points = precision filter (each trade judged individually on 43 factors).
+
+### Data Source
+
+All analysis from raw OANDA candle data, not bot logs.
+Scripts and raw data in V3 repo: github.com/BrockStar3540/mr-scrooge-v3
+- data/raw_candles/ — 50 trade candle files
+- data/trades_features_verified.csv — feature table
+- scripts/pull_raw_data.py — transparent extraction
+- docs/FACTOR_BIBLE.md — 31 factors analyzed
+- docs/MASTER_FINDINGS.md — 43 factors with verdicts
+- docs/SCORING_V3_LIVE.md — complete formula spec
+
+### Key Findings
+
+- Box age below 12h = 83% WR (strongest new factor)
+- Entry hour 0-7 UTC = 82% WR
+- Volume ratio 0.9-1.1 = 82% WR
+- OTR below 8% = 17% WR (INVERTED — removed from positive scoring)
+- EMA50 below 20% of box = 20% WR
+- Directional candles 4+ = 83-100% WR
+- BB STRETCH = 0% WR (hard blocked)
+- Wall proximity shows NO signal on V1 live (W=0.39, L=0.39)
+- Wick ratio inconsistent between V1 and V2 (unreliable)
